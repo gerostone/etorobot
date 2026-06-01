@@ -13,15 +13,23 @@ class FakeClient:
     resolved positionID) is read later via get_order(order_id).
     """
 
-    def __init__(self, *, open_positions=None, fill=None, order_error=None):
+    def __init__(self, *, open_positions=None, fill=None, order_error=None,
+                 history=None):
         self.created = None
         self.closed = None
         self.get_order_calls = 0
+        self.history_calls = 0
         # Per-poll responses for get_order; each entry is a "positions" list.
         # Defaults to an immediately-resolved single fill.
         self._fill_sequence = fill if fill is not None else [
             [{"positionID": 9001, "rate": 500.0, "units": 1.0,
               "amount": 500.0, "isOpen": True}]
+        ]
+        # Per-poll responses for get_trade_history; each entry is a list of
+        # closed trades. Defaults to an immediately-available matching close.
+        self._history_sequence = history if history is not None else [
+            [{"positionId": 9001, "instrumentId": 100000, "closeRate": 510.0,
+              "units": 1.0, "fees": 0.0, "isBuy": True}]
         ]
         self._order_error = order_error
         self._open_positions = open_positions
@@ -31,8 +39,8 @@ class FakeClient:
         return {"token": "tok-open", "orderId": 13902598,
                 "referenceId": "ref-open"}
 
-    async def close_position(self, position_id):
-        self.closed = position_id
+    async def close_position(self, position_id, instrument_id, units=None):
+        self.closed = (position_id, instrument_id)
         return {"orderForClose": {"positionID": 9001, "instrumentID": 100000,
                                   "unitsToDeduct": 1.0, "orderID": 13904638,
                                   "orderType": 19, "statusID": 1, "CID": 1,
@@ -48,6 +56,11 @@ class FakeClient:
         idx = min(self.get_order_calls - 1, len(self._fill_sequence) - 1)
         return {"orderID": order_id, "errorCode": 0, "errorMessage": None,
                 "positions": self._fill_sequence[idx]}
+
+    async def get_trade_history(self, min_date, page=1, page_size=50):
+        self.history_calls += 1
+        idx = min(self.history_calls - 1, len(self._history_sequence) - 1)
+        return self._history_sequence[idx]
 
     async def get_portfolio(self):
         positions = self._open_positions if self._open_positions is not None else [
@@ -90,19 +103,48 @@ async def test_open_order_polls_until_position_resolves():
 
 
 async def test_close_order_maps_to_fill():
-    client = FakeClient(fill=[
-        [{"positionID": 9001, "rate": 510.0, "units": 1.0,
-          "amount": 510.0, "isOpen": False}]
+    # The close fill (realized closeRate/units/fees) is read from the trade
+    # history, matched by positionId — not from get_order, which has no status
+    # endpoint for close orders.
+    client = FakeClient(history=[
+        [{"positionId": 9001, "instrumentId": 100000, "closeRate": 510.0,
+          "units": 1.0, "fees": 0.25, "isBuy": True}]
     ])
     broker = EtoroBroker(client, poll_interval=0.0)
     fill = await broker.execute(OrderEvent("close", "BTC", 100000,
                                            position_id="9001"))
-    assert client.closed == "9001"
+    assert client.closed == ("9001", 100000)
     assert fill.action == "close"
     assert fill.transaction == Transaction.SELL
     assert fill.price == 510.0
     assert fill.units == 1.0
+    assert fill.commission == 0.25
     assert fill.position_id == "9001"
+
+
+async def test_close_order_polls_history_until_trade_appears():
+    # First history poll: trade not settled yet (no matching positionId).
+    # Second poll: the closed trade appears.
+    client = FakeClient(history=[
+        [{"positionId": 8888, "closeRate": 1.0, "units": 1.0}],
+        [{"positionId": 9001, "instrumentId": 100000, "closeRate": 515.0,
+          "units": 2.0, "fees": 0.0, "isBuy": True}],
+    ])
+    broker = EtoroBroker(client, poll_interval=0.0)
+    fill = await broker.execute(OrderEvent("close", "BTC", 100000,
+                                           position_id="9001"))
+    assert client.history_calls == 2
+    assert fill.price == 515.0
+    assert fill.units == 2.0
+
+
+async def test_close_times_out_if_trade_never_appears():
+    client = FakeClient(history=[[]])  # closed trade never shows up
+    broker = EtoroBroker(client, poll_interval=0.0, poll_attempts=3)
+    with pytest.raises(TimeoutError):
+        await broker.execute(OrderEvent("close", "BTC", 100000,
+                                        position_id="9001"))
+    assert client.history_calls == 3
 
 
 async def test_order_error_raises():

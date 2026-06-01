@@ -80,17 +80,20 @@ class EtoroClient:
         body = {
             "action": "open",
             "transaction": transaction,
-            "symbol": symbol,
-            "instrumentId": instrument_id,
+            # The API rejects requests carrying BOTH symbol and instrumentId
+            # ("Exactly one of Symbol or InstrumentID must be provided"); send
+            # the instrument id, falling back to symbol only if id is absent.
+            **({"instrumentId": instrument_id} if instrument_id is not None
+               else {"symbol": symbol}),
             "orderType": "mkt",
             "leverage": leverage,
             "amount": amount,
             "orderCurrency": "usd",
         }
         if stop_loss is not None:
-            body["stopLoss"] = stop_loss
+            body["stopLossRate"] = stop_loss
         if take_profit is not None:
-            body["takeProfit"] = take_profit
+            body["takeProfitRate"] = take_profit
         # Demo orders go through the /demo/ path; the response is async and
         # carries only {token, orderId, referenceId} — the fill must be read
         # back via get_order(orderId).
@@ -108,14 +111,31 @@ class EtoroClient:
             write=False)
         return resp.json()
 
-    async def close_position(self, position_id: str) -> dict:
-        # Verified against OpenAPI spec: market-close-orders endpoint, with a
-        # /demo/ segment for the demo environment.
+    async def close_position(self, position_id: str, instrument_id: int,
+                             units: float | None = None) -> dict:
+        # market-close-orders endpoint, with a /demo/ segment for the demo
+        # environment. The body is required (omitting it returns 415);
+        # InstrumentID is mandatory, UnitsToDeduct is omitted for a full close.
         prefix = ("/api/v1/trading/execution/market-close-orders"
                   if self._env == "real"
                   else "/api/v1/trading/execution/demo/market-close-orders")
+        body: dict = {"InstrumentID": instrument_id}
+        if units is not None:
+            body["UnitsToDeduct"] = units
         resp = await self._request(
-            "POST", f"{prefix}/positions/{position_id}", write=True)
+            "POST", f"{prefix}/positions/{position_id}", write=True, json=body)
+        return resp.json()
+
+    async def get_trade_history(self, min_date: str, page: int = 1,
+                                page_size: int = 50) -> list[dict]:
+        # Closed trades (realized closeRate/units/fees per positionId). Close
+        # orders have no status endpoint, so the close fill is read from here.
+        # minDate is a required YYYY-MM-DD query param; demo inserts /demo/.
+        path = ("/api/v1/trading/info/trade/history" if self._env == "real"
+                else "/api/v1/trading/info/trade/demo/history")
+        resp = await self._request(
+            "GET", path, write=False,
+            params={"minDate": min_date, "page": page, "pageSize": page_size})
         return resp.json()
 
     async def get_portfolio(self) -> dict:
@@ -131,8 +151,7 @@ class EtoroClient:
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
         resp = await self._request(
-            "GET", f"/api/v1/market-data/instruments/by-symbol/{symbol}",
-            write=False)
+            "GET", f"/api/v1/instruments/{symbol}", write=False)
         instrument_id = int(resp.json()["instrumentId"])
         self._instrument_cache[symbol] = instrument_id
         return instrument_id

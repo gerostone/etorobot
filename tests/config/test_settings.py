@@ -41,6 +41,9 @@ def test_load_valid_config(tmp_path, monkeypatch):
 
 
 def test_missing_secret_raises(tmp_path, monkeypatch):
+    # chdir into a dir without a .env so the missing env var is not silently
+    # backfilled from the repo-root .env that pydantic-settings reads.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ETORO_API_KEY", raising=False)
     monkeypatch.setenv("ETORO_USER_KEY", "uk")
     path = _write(tmp_path, """

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from etorobot.brokers.base import Broker
 from etorobot.core.events import FillEvent, OrderEvent
@@ -31,12 +31,14 @@ class EtoroBroker(Broker):
                 price=rate, units=units, amount=order.amount,
                 commission=0.0, position_id=position_id, timestamp=now)
 
-        resp = await self._client.close_position(order.position_id)
-        rate, units, _ = await self._await_fill(self._close_order_id(resp))
+        await self._client.close_position(
+            order.position_id, order.instrument_id)
+        rate, units, fees = await self._await_close_fill(
+            order.position_id, now)
         return FillEvent(
             order.symbol, order.instrument_id, "close", Transaction.SELL,
             price=rate, units=units, amount=rate * units,
-            commission=0.0, position_id=order.position_id, timestamp=now)
+            commission=fees, position_id=order.position_id, timestamp=now)
 
     async def _await_fill(self, order_id) -> tuple[float, float, str]:
         """Poll the async order until it resolves into a filled position.
@@ -58,6 +60,27 @@ class EtoroBroker(Broker):
             f"order {order_id} did not resolve after {self._poll_attempts} "
             f"polls")
 
+    async def _await_close_fill(self, position_id,
+                                now: datetime) -> tuple[float, float, float]:
+        """Poll trade history until the closed position settles.
+
+        Close orders have no status-lookup endpoint; the realized closeRate/
+        units/fees only surface in the trade history once the close settles.
+        Match on positionId. A one-day lookback avoids the UTC-midnight edge.
+        """
+        min_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        target = str(position_id)
+        for _ in range(self._poll_attempts):
+            trades = await self._client.get_trade_history(min_date)
+            for trade in trades:
+                if str(trade.get("positionId")) == target:
+                    return (float(trade["closeRate"]), float(trade["units"]),
+                            float(trade.get("fees") or 0.0))
+            await asyncio.sleep(self._poll_interval)
+        raise TimeoutError(
+            f"close of position {position_id} did not settle after "
+            f"{self._poll_attempts} polls")
+
     async def get_portfolio(self) -> Portfolio:
         data = await self._client.get_portfolio()
         return self._parse_portfolio(data)
@@ -65,10 +88,6 @@ class EtoroBroker(Broker):
     @staticmethod
     def _open_order_id(resp: dict):
         return resp["orderId"]
-
-    @staticmethod
-    def _close_order_id(resp: dict):
-        return resp["orderForClose"]["orderID"]
 
     @staticmethod
     def _order_error(info: dict) -> str | None:
