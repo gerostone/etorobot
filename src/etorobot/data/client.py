@@ -69,7 +69,8 @@ class EtoroClient:
                         c["fromDate"].replace("Z", "+00:00")),
                     open=float(c["open"]), high=float(c["high"]),
                     low=float(c["low"]), close=float(c["close"]),
-                    volume=float(c["volume"]),
+                    # The live feed returns null volume on some candles.
+                    volume=float(c.get("volume") or 0.0),
                 ))
         return out
 
