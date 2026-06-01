@@ -40,6 +40,10 @@ class RiskManager:
                         position_id=p.position_id))
             return RiskDecision(False, None, "no open position to close")
 
+        if signal.direction == Direction.SELL:
+            return RiskDecision(False, None,
+                                "short selling disabled (long-only v1)")
+
         limit = self._day_baseline * (1 - self._cfg.daily_loss_limit_pct)
         if portfolio.equity <= limit:
             return RiskDecision(False, None, "daily loss limit reached")

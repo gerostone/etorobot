@@ -48,9 +48,10 @@ async def do_run(config: AppConfig, client) -> None:
                     instruments, config.timeframe)
     broker = EtoroBroker(_make_client(config))
     repo = Repository(f"sqlite:///bot_{config.secrets.env}.db")
-    engine = Engine(feed=feed,
-                    strategies=[build_strategy(config.strategy.name,
-                                               config.strategy.params)],
+    strategies = {iid: [build_strategy(config.strategy.name,
+                                       config.strategy.params)]
+                  for iid in instruments}
+    engine = Engine(feed=feed, strategies=strategies,
                     risk=RiskManager(config.risk), broker=broker, repo=repo,
                     notifier=_make_notifier(config))
     await engine.run()

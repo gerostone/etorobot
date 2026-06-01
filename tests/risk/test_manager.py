@@ -65,6 +65,14 @@ def test_close_signal_emits_close_order_for_open_position():
     assert d.order.position_id == "p1"
 
 
+def test_sell_signal_rejected_long_only():
+    rm = RiskManager(_cfg())
+    pf = Portfolio(cash=1000.0, positions=[])
+    d = rm.evaluate(_sig(Direction.SELL), pf, price=200.0,
+                    now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert not d.accepted and "short" in d.reason.lower()
+
+
 def test_daily_loss_limit_kills_new_orders():
     rm = RiskManager(_cfg(daily_loss_limit_pct=0.05))
     t0 = datetime(2026, 1, 1, 9, tzinfo=timezone.utc)

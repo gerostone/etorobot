@@ -27,8 +27,9 @@ async def run_backtest(candles_by_instrument: dict[int, list[Candle]],
                              slippage_pct=backtest.slippage_pct,
                              fill_price=backtest.fill_price)
     repo = Repository("sqlite:///:memory:")
-    engine = Engine(feed=feed,
-                    strategies=[build_strategy(strategy.name, strategy.params)],
+    strategies = {iid: [build_strategy(strategy.name, strategy.params)]
+                  for iid in candles_by_instrument}
+    engine = Engine(feed=feed, strategies=strategies,
                     risk=RiskManager(risk), broker=broker, repo=repo,
                     notifier=NullNotifier())
     await engine.run()
