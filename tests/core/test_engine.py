@@ -40,3 +40,5 @@ async def test_engine_runs_and_records_a_trade():
     assert repo.count_signals() >= 1
     assert repo.count_fills() >= 1
     assert any(k == "fill" for k, _ in notifier.messages)
+    assert notifier.messages[0] == ("start", "engine started")
+    assert notifier.messages[-1] == ("stop", "engine stopped")
