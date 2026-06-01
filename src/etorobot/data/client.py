@@ -21,6 +21,7 @@ class EtoroClient:
         self._http = httpx.AsyncClient(base_url=BASE_URL, timeout=30.0)
         self._read_bucket = TokenBucket(capacity=60, refill_per_sec=1.0)
         self._write_bucket = TokenBucket(capacity=20, refill_per_sec=20 / 60)
+        self._instrument_cache: dict[str, int] = {}
 
     async def __aenter__(self) -> "EtoroClient":
         return self
@@ -112,3 +113,13 @@ class EtoroClient:
                 else "/api/v1/trading/info/demo/portfolio")
         resp = await self._request("GET", path, write=False)
         return resp.json()
+
+    async def resolve_instrument(self, symbol: str) -> int:
+        if symbol in self._instrument_cache:
+            return self._instrument_cache[symbol]
+        resp = await self._request(
+            "GET", f"/api/v1/market-data/instruments/by-symbol/{symbol}",
+            write=False)
+        instrument_id = int(resp.json()["instrumentId"])
+        self._instrument_cache[symbol] = instrument_id
+        return instrument_id
