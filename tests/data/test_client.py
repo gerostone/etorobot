@@ -1,4 +1,6 @@
 # tests/data/test_client.py
+import json
+
 import httpx
 import respx
 import pytest
@@ -46,7 +48,6 @@ async def test_create_order_builds_body():
         resp = await c.create_order(symbol="BTC", instrument_id=100000,
                                     transaction="buy", amount=500.0,
                                     leverage=1)
-    import json
     body = json.loads(route.calls[0].request.content)
     assert body["action"] == "open"
     assert body["transaction"] == "buy"
@@ -58,11 +59,13 @@ async def test_create_order_builds_body():
 
 @respx.mock
 async def test_retries_on_429_then_succeeds():
-    respx.get(url__regex=rf"{BASE}/api/v1/market-data/.*").mock(side_effect=[
-        httpx.Response(429),
-        httpx.Response(200, json={"candles": [{"candles": []}]}),
-    ])
+    route = respx.get(url__regex=rf"{BASE}/api/v1/market-data/.*").mock(
+        side_effect=[
+            httpx.Response(429),
+            httpx.Response(200, json={"candles": [{"candles": []}]}),
+        ])
     async with _client() as c:
         candles = await c.get_candles(100000, "BTC", "OneHour", count=1,
                                       _backoff_base=0.001)
     assert candles == []
+    assert route.call_count == 2
