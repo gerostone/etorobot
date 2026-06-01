@@ -53,3 +53,22 @@ class Repository:
             return s.scalars(
                 select(SignalRow).order_by(SignalRow.id.desc()).limit(1)
             ).first()
+
+    def equity_curve(self) -> list[float]:
+        with Session(self._engine) as s:
+            rows = s.scalars(
+                select(EquityRow).order_by(EquityRow.id.asc())).all()
+            return [r.equity for r in rows]
+
+    def trade_pnls(self) -> list[float]:
+        with Session(self._engine) as s:
+            fills = s.scalars(
+                select(FillRow).order_by(FillRow.id.asc())).all()
+        opens: dict[str, float] = {}
+        pnls: list[float] = []
+        for f in fills:
+            if f.action == "open":
+                opens[f.position_id] = f.amount
+            elif f.action == "close" and f.position_id in opens:
+                pnls.append(f.amount - opens.pop(f.position_id))
+        return pnls
