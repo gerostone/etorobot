@@ -91,8 +91,21 @@ class EtoroClient:
             body["stopLoss"] = stop_loss
         if take_profit is not None:
             body["takeProfit"] = take_profit
-        resp = await self._request("POST", "/api/v2/trading/execution/orders",
-                                   write=True, json=body)
+        # Demo orders go through the /demo/ path; the response is async and
+        # carries only {token, orderId, referenceId} — the fill must be read
+        # back via get_order(orderId).
+        path = ("/api/v2/trading/execution/orders" if self._env == "real"
+                else "/api/v2/trading/execution/demo/orders")
+        resp = await self._request("POST", path, write=True, json=body)
+        return resp.json()
+
+    async def get_order(self, order_id: str | int) -> dict:
+        # Order status lookup. Once the order resolves, the response carries a
+        # "positions" array with the realized rate/units/positionID.
+        segment = "real" if self._env == "real" else "demo"
+        resp = await self._request(
+            "GET", f"/api/v1/trading/info/{segment}/orders/{order_id}",
+            write=False)
         return resp.json()
 
     async def close_position(self, position_id: str) -> dict:

@@ -1,6 +1,23 @@
 # tests/feeds/test_aggregator.py
 from datetime import datetime, timezone
-from etorobot.feeds.live import CandleAggregator, interval_seconds
+from etorobot.feeds.live import CandleAggregator, LiveFeed, interval_seconds
+
+# Real frames captured from wss://ws.etoro.com/ws (instrument:100000).
+_SNAPSHOT = {"messages": [{
+    "topic": "instrument:100000",
+    "content": ('{"InstrumentID":"100000","OfficialClosingPrice":"70846.64",'
+                '"Ask":"71051.84","Bid":"71051.83","LastExecution":"71051.83",'
+                '"Date":"2026-06-01T22:21:12.6164362Z"}'),
+    "id": "c10aec7c", "type": "Snapshot"}]}
+_RATE = {"messages": [{
+    "topic": "instrument:100000",
+    "content": ('{"Ask":"71055.71","Bid":"71055.7","LastExecution":"71055.7",'
+                '"Date":"2026-06-01T22:21:13.8434831Z","PriceRateID":"144286591897"}'),
+    "id": "d048f9be", "type": "Trading.Instrument.Rate"}]}
+_PARTIAL = {"messages": [{
+    "topic": "instrument:100000",
+    "content": '{"Date":"2026-06-01T22:21:15.8858135Z","PriceRateID":"144286592399"}',
+    "id": "8fa63e3d", "type": "Trading.Instrument.Rate"}]}
 
 
 def _t(minute, second=0):
@@ -29,3 +46,21 @@ def test_emits_completed_candle_when_bucket_rolls():
     assert candle.low == 9.0 and candle.close == 9.0
     assert candle.volume == 3.0
     assert candle.symbol == "BTC" and candle.instrument_id == 100000
+
+
+def test_parse_tick_snapshot_frame():
+    assert LiveFeed._parse_tick(_SNAPSHOT) == [(100000, 71051.83, 0.0)]
+
+
+def test_parse_tick_rate_frame_uses_topic_for_id():
+    # Incremental rate frames omit InstrumentID from content; id comes from topic.
+    assert LiveFeed._parse_tick(_RATE) == [(100000, 71055.7, 0.0)]
+
+
+def test_parse_tick_partial_frame_yields_nothing():
+    assert LiveFeed._parse_tick(_PARTIAL) == []
+
+
+def test_parse_tick_non_price_envelope_yields_nothing():
+    assert LiveFeed._parse_tick({"id": "x", "success": True,
+                                 "operation": "Subscribe"}) == []

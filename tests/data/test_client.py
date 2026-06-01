@@ -40,10 +40,10 @@ async def test_get_candles_parses_ohlcv():
 
 @respx.mock
 async def test_create_order_builds_body():
-    route = respx.post(f"{BASE}/api/v2/trading/execution/orders").mock(
-        return_value=httpx.Response(200, json={"positionId": "p1",
-                                               "executionRate": 500.0,
-                                               "units": 1.0}))
+    route = respx.post(f"{BASE}/api/v2/trading/execution/demo/orders").mock(
+        return_value=httpx.Response(200, json={"token": "tok",
+                                               "orderId": 13902598,
+                                               "referenceId": "ref"}))
     async with _client() as c:
         resp = await c.create_order(symbol="BTC", instrument_id=100000,
                                     transaction="buy", amount=500.0,
@@ -54,7 +54,7 @@ async def test_create_order_builds_body():
     assert body["instrumentId"] == 100000
     assert body["orderType"] == "mkt"
     assert body["amount"] == 500.0
-    assert resp["positionId"] == "p1"
+    assert resp["orderId"] == 13902598
 
 
 @respx.mock
