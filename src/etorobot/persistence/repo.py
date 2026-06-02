@@ -65,17 +65,20 @@ class Repository:
             return _run_dict(row) if row is not None else None
 
     def record_signal(self, signal: Signal, accepted: bool,
-                      reason: str | None = None) -> None:
+                      reason: str | None = None,
+                      run_id: int | None = None) -> None:
         with Session(self._engine) as s:
             s.add(SignalRow(
+                run_id=run_id,
                 symbol=signal.symbol, instrument_id=signal.instrument_id,
                 direction=signal.direction.value, timestamp=signal.timestamp,
                 accepted=accepted, reason=reason))
             s.commit()
 
-    def record_fill(self, fill: FillEvent) -> None:
+    def record_fill(self, fill: FillEvent, run_id: int | None = None) -> None:
         with Session(self._engine) as s:
             s.add(FillRow(
+                run_id=run_id,
                 symbol=fill.symbol, instrument_id=fill.instrument_id,
                 action=fill.action, transaction=fill.transaction.value,
                 price=fill.price, units=fill.units, amount=fill.amount,
@@ -84,9 +87,10 @@ class Repository:
             s.commit()
 
     def record_equity(self, timestamp: datetime, equity: float,
-                      cash: float) -> None:
+                      cash: float, run_id: int | None = None) -> None:
         with Session(self._engine) as s:
-            s.add(EquityRow(timestamp=timestamp, equity=equity, cash=cash))
+            s.add(EquityRow(run_id=run_id, timestamp=timestamp,
+                            equity=equity, cash=cash))
             s.commit()
 
     def count_signals(self) -> int:

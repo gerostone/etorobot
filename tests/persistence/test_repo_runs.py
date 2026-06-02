@@ -36,3 +36,27 @@ def test_wal_enabled_on_file_db(tmp_path):
     with repo._engine.connect() as c:
         mode = c.execute(text("PRAGMA journal_mode")).scalar()
     assert mode.lower() == "wal"
+
+
+from datetime import datetime as _dt, timezone as _tz
+
+from etorobot.core.events import FillEvent, Signal
+from etorobot.core.types import Direction, Transaction
+
+
+def _ts():
+    return _dt(2026, 1, 1, tzinfo=_tz.utc)
+
+
+def test_record_methods_stamp_run_id():
+    repo = Repository("sqlite:///:memory:")
+    run_id = repo.create_run(mode="backtest", env="demo", strategy="s",
+                             params={}, timeframe="OneHour",
+                             instruments="BTC", starting_cash=1000.0)
+    repo.record_signal(Signal("BTC", 100000, Direction.BUY, _ts()),
+                       accepted=True, run_id=run_id)
+    repo.record_fill(FillEvent("BTC", 100000, "open", Transaction.BUY,
+                               500.0, 1.0, 500.0, 0.5, "p1", _ts()),
+                     run_id=run_id)
+    repo.record_equity(_ts(), 1000.0, 500.0, run_id=run_id)
+    assert [s["id"] for s in repo.run_signals(run_id)]  # non-empty
