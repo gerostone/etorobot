@@ -1,6 +1,10 @@
 # tests/persistence/test_repo_runs.py
-from sqlalchemy import create_engine, text
+from datetime import datetime as _dt, timezone as _tz
 
+from sqlalchemy import text
+
+from etorobot.core.events import FillEvent, Signal
+from etorobot.core.types import Direction, Transaction
 from etorobot.persistence.repo import Repository
 
 
@@ -36,12 +40,6 @@ def test_wal_enabled_on_file_db(tmp_path):
     with repo._engine.connect() as c:
         mode = c.execute(text("PRAGMA journal_mode")).scalar()
     assert mode.lower() == "wal"
-
-
-from datetime import datetime as _dt, timezone as _tz
-
-from etorobot.core.events import FillEvent, Signal
-from etorobot.core.types import Direction, Transaction
 
 
 def _ts():

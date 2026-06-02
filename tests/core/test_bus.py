@@ -1,4 +1,3 @@
-import pytest
 from etorobot.core.bus import EventBus
 
 
