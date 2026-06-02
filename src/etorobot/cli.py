@@ -87,6 +87,16 @@ async def do_run(config: AppConfig, client) -> None:
         repo.finish_run(run_id, status)
 
 
+def do_dashboard(host: str, port: int, db_url: str) -> None:
+    import uvicorn
+
+    from etorobot.config.settings import DashboardSecrets
+    from etorobot.dashboard.app import create_app
+
+    token = DashboardSecrets().token
+    uvicorn.run(create_app(db_url, token=token), host=host, port=port)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="etorobot")
     parser.add_argument("--config", default="config.yaml")
@@ -94,6 +104,10 @@ def main() -> None:
     sub.add_parser("run")
     bt = sub.add_parser("backtest")
     bt.add_argument("--candles", type=int, default=500)
+    dash = sub.add_parser("dashboard")
+    dash.add_argument("--host", default="127.0.0.1")
+    dash.add_argument("--port", type=int, default=8000)
+    dash.add_argument("--db", default=None)
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -104,6 +118,9 @@ def main() -> None:
             do_backtest(config, _make_client(config), args.candles))
         for k, v in metrics.items():
             print(f"{k}: {v}")
+    elif args.command == "dashboard":
+        db = args.db or f"bot_{config.secrets.env}.db"
+        do_dashboard(args.host, args.port, f"sqlite:///{db}")
 
 
 if __name__ == "__main__":
