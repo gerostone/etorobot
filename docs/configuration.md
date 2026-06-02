@@ -41,7 +41,19 @@ Both optional. If **either** is missing, the bot uses `NullNotifier` (no notific
 # TELEGRAM_CHAT_ID=987654321
 ```
 
-Unknown `ETORO_*` / `TELEGRAM_*` variables are ignored (`extra="ignore"`), so it's safe to keep other env vars in the same `.env`.
+### Dashboard (`DASHBOARD_` prefix) — `DashboardSecrets`
+
+Optional. Controls auth for the read-only dashboard (`etorobot dashboard`).
+
+| Variable | Required | Default | Notes |
+|----------|----------|---------|-------|
+| `DASHBOARD_TOKEN` | no | `None` | Shared token for the dashboard. If unset, the dashboard runs without auth (only safe on localhost). Required for remote exposure. See [docs/dashboard.md](dashboard.md). |
+
+```dotenv
+# DASHBOARD_TOKEN=choose-a-long-random-string
+```
+
+Unknown `ETORO_*` / `TELEGRAM_*` / `DASHBOARD_*` variables are ignored (`extra="ignore"`), so it's safe to keep other env vars in the same `.env`.
 
 ---
 
@@ -187,4 +199,4 @@ backtest:
 
 ## Persistence side effects
 
-Config doesn't set the database path directly, but it determines it: live runs write to `bot_<ETORO_ENV>.db` (e.g. `bot_demo.db`); backtests use an in-memory SQLite DB. `*.db` files are git-ignored. See the README's Persistence section for the table layout.
+Config doesn't set the database path directly, but it determines it: both live runs and CLI backtests write to `bot_<ETORO_ENV>.db` (e.g. `bot_demo.db`), so the dashboard can report on them. `*.db` files are git-ignored. See the README's Persistence section for the table layout.

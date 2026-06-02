@@ -98,6 +98,9 @@ Commands:
   backtest [--candles N]
                        Fetch N candles per instrument (default 500) and
                        backtest the configured strategy, printing metrics.
+  dashboard [--host H] [--port P] [--db PATH]
+                       Serve the read-only web dashboard (default
+                       127.0.0.1:8000) over the bot's SQLite database.
 ```
 
 Example backtest output:
@@ -111,6 +114,17 @@ win_rate: 0.0
 ```
 
 (Negative numbers here reflect *strategy* performance on the sampled data, not a framework error.)
+
+### Dashboard
+
+A read-only web dashboard follows live runs and backtests in real time — run list, metrics, equity curve, trades, and signals, with live updates over SSE.
+
+```bash
+echo 'DASHBOARD_TOKEN=choose-a-long-random-string' >> .env   # required for remote exposure
+etorobot --config config.yaml dashboard --host 127.0.0.1 --port 8000
+```
+
+Then open <http://127.0.0.1:8000/>. For TLS/remote access, auth, and endpoint details see **[docs/dashboard.md](docs/dashboard.md)**.
 
 ## How it works
 
@@ -148,7 +162,7 @@ The bundled example is `sma_crossover` (`SmaCrossover`, fast/slow SMA). To add y
 
 ```
 src/etorobot/
-  cli.py              # argparse entry point: run / backtest
+  cli.py              # argparse entry point: run / backtest / dashboard
   config/settings.py  # pydantic config + secrets loading (.env + yaml)
   core/
     types.py          # Candle, Position, Portfolio, enums
@@ -186,7 +200,7 @@ docs/                 # architecture, configuration, strategies + design spec
 
 ## Persistence
 
-Live runs write to `bot_<env>.db` (e.g. `bot_demo.db`); backtests use an in-memory SQLite DB. Three tables:
+Both live runs and CLI backtests write to `bot_<env>.db` (e.g. `bot_demo.db`) so the dashboard can report on them; a `runs` table groups each session, and signals/fills/equity snapshots carry a `run_id`. Four tables:
 
 - **`signals`** — every signal with `accepted` + `reason` (so you can see *why* a trade was/wasn't taken).
 - **`fills`** — every executed open/close with price, units, amount, commission.
@@ -215,6 +229,7 @@ The `real` path is implemented but **unvalidated**. Before risking real money:
 
 - [Architecture](docs/architecture.md) — event flow, components, design decisions
 - [Configuration reference](docs/configuration.md) — every `.env` and `config.yaml` field
+- [Dashboard](docs/dashboard.md) — read-only web view of runs (live + backtests)
 - [Writing strategies](docs/strategies.md) — implement and register a custom strategy
 - [Design spec](docs/superpowers/specs/2026-06-01-etoro-bot-design.md) — original design
 - [Implementation plan](docs/superpowers/plans/2026-06-01-etoro-bot.md) — task-by-task build log
