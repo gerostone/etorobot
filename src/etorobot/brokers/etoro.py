@@ -11,10 +11,16 @@ from etorobot.core.types import Portfolio, Position, Transaction
 
 class EtoroBroker(Broker):
     def __init__(self, client, poll_interval: float = 0.5,
-                 poll_attempts: int = 20) -> None:
+                 poll_attempts: int = 20,
+                 close_poll_attempts: int = 40) -> None:
         self._client = client
         self._poll_interval = poll_interval
         self._poll_attempts = poll_attempts
+        # Closes settle via trade history, which lags placement noticeably more
+        # than open fills resolve (observed ~10s live). Give the close path a
+        # larger budget so a slow settle doesn't raise TimeoutError on an order
+        # that actually executed (which would desync the bot's position state).
+        self._close_poll_attempts = close_poll_attempts
 
     async def execute(self, order: OrderEvent) -> FillEvent:
         now = datetime.now(timezone.utc)
@@ -70,7 +76,7 @@ class EtoroBroker(Broker):
         """
         min_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
         target = str(position_id)
-        for _ in range(self._poll_attempts):
+        for _ in range(self._close_poll_attempts):
             trades = await self._client.get_trade_history(min_date)
             for trade in trades:
                 if str(trade.get("positionId")) == target:
@@ -79,7 +85,7 @@ class EtoroBroker(Broker):
             await asyncio.sleep(self._poll_interval)
         raise TimeoutError(
             f"close of position {position_id} did not settle after "
-            f"{self._poll_attempts} polls")
+            f"{self._close_poll_attempts} polls")
 
     async def get_portfolio(self) -> Portfolio:
         data = await self._client.get_portfolio()

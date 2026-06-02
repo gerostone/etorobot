@@ -140,11 +140,26 @@ async def test_close_order_polls_history_until_trade_appears():
 
 async def test_close_times_out_if_trade_never_appears():
     client = FakeClient(history=[[]])  # closed trade never shows up
-    broker = EtoroBroker(client, poll_interval=0.0, poll_attempts=3)
+    broker = EtoroBroker(client, poll_interval=0.0, close_poll_attempts=3)
     with pytest.raises(TimeoutError):
         await broker.execute(OrderEvent("close", "BTC", 100000,
                                         position_id="9001"))
     assert client.history_calls == 3
+
+
+async def test_close_uses_larger_default_budget_than_open():
+    # The close settles on the 30th poll — beyond the open default (20) but
+    # within the more generous close default (40). A slow settle that actually
+    # executed must not raise TimeoutError, so the close gets its own budget.
+    seq = [[] for _ in range(29)] + [
+        [{"positionId": 9001, "instrumentId": 100000, "closeRate": 510.0,
+          "units": 1.0, "fees": 0.0, "isBuy": True}]]
+    client = FakeClient(history=seq)
+    broker = EtoroBroker(client, poll_interval=0.0)  # default budgets
+    fill = await broker.execute(OrderEvent("close", "BTC", 100000,
+                                           position_id="9001"))
+    assert client.history_calls == 30
+    assert fill.price == 510.0
 
 
 async def test_order_error_raises():
