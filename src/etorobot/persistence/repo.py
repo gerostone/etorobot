@@ -1,19 +1,68 @@
 # src/etorobot/persistence/repo.py
 from __future__ import annotations
 
-from datetime import datetime
+import json
+from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
 from etorobot.core.events import FillEvent, Signal
-from etorobot.persistence.models import Base, EquityRow, FillRow, SignalRow
+from etorobot.persistence.models import (
+    Base, EquityRow, FillRow, RunRow, SignalRow)
+
+
+def _run_dict(r: RunRow) -> dict:
+    return {
+        "id": r.id, "mode": r.mode, "env": r.env, "strategy": r.strategy,
+        "params": json.loads(r.params) if r.params else {},
+        "timeframe": r.timeframe, "instruments": r.instruments,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "ended_at": r.ended_at.isoformat() if r.ended_at else None,
+        "status": r.status, "starting_cash": r.starting_cash,
+    }
 
 
 class Repository:
     def __init__(self, url: str = "sqlite:///bot_demo.db") -> None:
         self._engine = create_engine(url)
+
+        @event.listens_for(self._engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+            cur.close()
+
         Base.metadata.create_all(self._engine)
+
+    def create_run(self, *, mode: str, env: str, strategy: str,
+                   params: dict, timeframe: str, instruments: str,
+                   starting_cash: float) -> int:
+        with Session(self._engine) as s:
+            row = RunRow(
+                mode=mode, env=env, strategy=strategy,
+                params=json.dumps(params), timeframe=timeframe,
+                instruments=instruments,
+                started_at=datetime.now(timezone.utc), ended_at=None,
+                status="running", starting_cash=starting_cash)
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def finish_run(self, run_id: int, status: str) -> None:
+        with Session(self._engine) as s:
+            row = s.get(RunRow, run_id)
+            if row is None:
+                return
+            row.status = status
+            row.ended_at = datetime.now(timezone.utc)
+            s.commit()
+
+    def get_run_row(self, run_id: int) -> dict | None:
+        with Session(self._engine) as s:
+            row = s.get(RunRow, run_id)
+            return _run_dict(row) if row is not None else None
 
     def record_signal(self, signal: Signal, accepted: bool,
                       reason: str | None = None) -> None:
