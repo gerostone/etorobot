@@ -1,10 +1,12 @@
 # tests/test_cli.py
 from datetime import datetime, timezone, timedelta
+
 from etorobot.config.settings import (
     AppConfig, Secrets, TelegramSecrets, InstrumentConfig, StrategyConfig,
     RiskConfig, BacktestConfig)
 from etorobot.core.types import Candle
 from etorobot.cli import do_backtest
+from etorobot.persistence.repo import Repository
 
 
 class FakeClient:
@@ -36,6 +38,20 @@ def _config():
         telegram=TelegramSecrets())
 
 
-async def test_do_backtest_returns_metrics():
-    metrics = await do_backtest(_config(), client=FakeClient(), candles_count=10)
+async def test_do_backtest_returns_metrics(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'bt.db'}"
+    metrics = await do_backtest(_config(), client=FakeClient(),
+                                candles_count=10, db_url=db_url)
     assert "total_return" in metrics and "num_trades" in metrics
+
+
+async def test_do_backtest_records_a_finished_run(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'bt.db'}"
+    await do_backtest(_config(), client=FakeClient(), candles_count=10,
+                      db_url=db_url)
+    repo = Repository(db_url)
+    runs = repo.list_run_rows()
+    assert len(runs) == 1
+    assert runs[0]["mode"] == "backtest"
+    assert runs[0]["status"] == "finished"
+    assert runs[0]["ended_at"] is not None

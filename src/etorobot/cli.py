@@ -28,15 +28,33 @@ def _make_notifier(config: AppConfig):
     return NullNotifier()
 
 
-async def do_backtest(config: AppConfig, client, candles_count: int = 500) -> dict:
+async def do_backtest(config: AppConfig, client, candles_count: int = 500,
+                      db_url: str | None = None) -> dict:
     candles_by_instrument = {}
+    symbols: dict[int, str] = {}
     async with client:
         for inst in config.instruments:
             iid = await client.resolve_instrument(inst.symbol)
+            symbols[iid] = inst.symbol
             candles_by_instrument[iid] = await client.get_candles(
                 iid, inst.symbol, config.timeframe, count=candles_count)
-    return await run_backtest(candles_by_instrument, config.strategy,
-                              config.risk, config.backtest)
+    db_url = db_url or f"sqlite:///bot_{config.secrets.env}.db"
+    repo = Repository(db_url)
+    run_id = repo.create_run(
+        mode="backtest", env=config.secrets.env,
+        strategy=config.strategy.name, params=config.strategy.params,
+        timeframe=config.timeframe,
+        instruments=",".join(symbols.values()), starting_cash=1000.0)
+    status = "finished"
+    try:
+        return await run_backtest(candles_by_instrument, config.strategy,
+                                  config.risk, config.backtest,
+                                  repo=repo, run_id=run_id)
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        repo.finish_run(run_id, status)
 
 
 async def do_run(config: AppConfig, client) -> None:
@@ -48,13 +66,25 @@ async def do_run(config: AppConfig, client) -> None:
                     instruments, config.timeframe)
     broker = EtoroBroker(_make_client(config))
     repo = Repository(f"sqlite:///bot_{config.secrets.env}.db")
+    run_id = repo.create_run(
+        mode="live", env=config.secrets.env,
+        strategy=config.strategy.name, params=config.strategy.params,
+        timeframe=config.timeframe,
+        instruments=",".join(instruments.values()), starting_cash=0.0)
     strategies = {iid: [build_strategy(config.strategy.name,
                                        config.strategy.params)]
                   for iid in instruments}
     engine = Engine(feed=feed, strategies=strategies,
                     risk=RiskManager(config.risk), broker=broker, repo=repo,
-                    notifier=_make_notifier(config))
-    await engine.run()
+                    notifier=_make_notifier(config), run_id=run_id)
+    status = "finished"
+    try:
+        await engine.run()
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        repo.finish_run(run_id, status)
 
 
 def main() -> None:
