@@ -24,6 +24,12 @@ class TelegramSecrets(BaseSettings):
     chat_id: str | None = None
 
 
+class DashboardSecrets(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="DASHBOARD_", env_file=".env",
+                                      extra="ignore")
+    token: str | None = None
+
+
 class InstrumentConfig(BaseModel):
     symbol: str
 
