@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>etorobot — run</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+  <p><a href="/">← volver</a></p>
+  <h1>Run <span id="runId"></span> <span id="statusBadge"></span></h1>
+  <div class="metrics" id="metrics"></div>
+  <h2>Equity</h2>
+  <canvas id="equityChart"></canvas>
+  <h2>Trades</h2>
+  <table id="fills"><thead><tr>
+    <th>ID</th><th>Acción</th><th>Símbolo</th><th>Precio</th><th>Units</th>
+    <th>Monto</th><th>Comisión</th><th>Pos</th><th>Timestamp</th>
+  </tr></thead><tbody></tbody></table>
+  <h2>Señales</h2>
+  <table id="signals"><thead><tr>
+    <th>ID</th><th>Dirección</th><th>Símbolo</th><th>Aceptada</th>
+    <th>Motivo</th><th>Timestamp</th>
+  </tr></thead><tbody></tbody></table>
+  <script>window.VIEW = "run";</script>
+  <script src="/app.js"></script>
+</body>
+</html>
