@@ -16,7 +16,9 @@ from etorobot.strategies.registry import build_strategy
 async def run_backtest(candles_by_instrument: dict[int, list[Candle]],
                        strategy: StrategyConfig, risk: RiskConfig,
                        backtest: BacktestConfig,
-                       starting_cash: float = 1000.0) -> dict:
+                       starting_cash: float = 1000.0,
+                       repo: Repository | None = None,
+                       run_id: int | None = None) -> dict:
     all_candles: list[Candle] = []
     for candles in candles_by_instrument.values():
         all_candles.extend(candles)
@@ -26,11 +28,15 @@ async def run_backtest(candles_by_instrument: dict[int, list[Candle]],
                              commission_pct=backtest.commission_pct,
                              slippage_pct=backtest.slippage_pct,
                              fill_price=backtest.fill_price)
-    repo = Repository("sqlite:///:memory:")
+    if repo is None:
+        repo = Repository("sqlite:///:memory:")
     strategies = {iid: [build_strategy(strategy.name, strategy.params)]
                   for iid in candles_by_instrument}
     engine = Engine(feed=feed, strategies=strategies,
                     risk=RiskManager(risk), broker=broker, repo=repo,
-                    notifier=NullNotifier())
+                    notifier=NullNotifier(), run_id=run_id)
     await engine.run()
+    if run_id is not None:
+        equity = [e["equity"] for e in repo.run_equity(run_id)]
+        return compute_metrics(equity, repo.run_trade_pnls(run_id))
     return compute_metrics(repo.equity_curve(), repo.trade_pnls())
