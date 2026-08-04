@@ -96,3 +96,25 @@ Abort at any prompt leaves at most one open min-size position, reported clearly 
 ## Out of scope (YAGNI)
 
 Portfolio/token lifecycle via API (create/delete portfolio, mint/rotate tokens — done in eToro's UI), OAuth-scope introspection, multiple portfolios, WS Bearer auth, dashboard changes.
+
+## Addendum (2026-08-04, post-merge): UI-issued key pairs
+
+Field finding: eToro's desktop UI issues Agent Portfolio credentials as a
+**scoped `x-api-key`/`x-user-key` pair**, not a Bearer token (the Bearer
+flow exists only via the API's create-user-token endpoints). A scoped pair
+works on the normal `/real/` trading paths, and has a reliable fingerprint:
+`GET /api/v1/agent-portfolios` answers **403 "this gcid is an
+agent-portfolio"** (a main-account pair answers 200).
+
+Design change: the real-run guard accepts either scoped credential:
+
+- `ETORO_AGENT_TOKEN` (Bearer, API-minted) — as designed; or
+- `ETORO_AGENT_PORTFOLIO=true` — an explicit claim that the configured key
+  pair is a UI-issued Agent Portfolio key. The claim is **verified at
+  startup** with the read-only fingerprint probe; anything but the
+  distinctive 403 refuses the session (fail-closed, so a main-account pair
+  can never trade real money).
+
+`--real-money` remains required per session. Demo paths reject
+agent-portfolio pairs (403 InsufficientPermissions), so such a key is
+real-only by construction.
