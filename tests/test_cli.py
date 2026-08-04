@@ -212,3 +212,24 @@ async def test_do_run_splits_planes_bearer_broker_pair_feed(monkeypatch):
     assert captured["broker_client"]._agent_token == "agtok"
     # ...while the WebSocket feed keeps the raw key pair.
     assert captured["feed_keys"] == ("ak", "uk")
+
+
+async def test_do_validate_real_wires_data_client(monkeypatch):
+    seen = {}
+
+    async def fake_run_validation(client, symbol, amount, out_path,
+                                  data_client=None, **kw):
+        seen["client"] = client
+        seen["data_client"] = data_client
+
+    monkeypatch.setattr("etorobot.validate.run_validation",
+                        fake_run_validation)
+    config = SimpleNamespace(
+        secrets=SimpleNamespace(env="demo", agent_token="agtok",
+                                api_key="ak", user_key="uk"),
+        instruments=[SimpleNamespace(symbol="BTC")])
+    await cli.do_validate_real(config, amount=10.0)
+    # Trade plane carries the Bearer token; data plane is the demo pair.
+    assert seen["client"]._agent_token == "agtok"
+    assert seen["data_client"]._agent_token is None
+    assert seen["data_client"]._env == "demo"
