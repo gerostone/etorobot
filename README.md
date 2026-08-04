@@ -3,7 +3,7 @@
 An event-driven, **pluggable strategy framework** for the [eToro public API](https://public-api.etoro.com). Asset-agnostic, async, and built so the *same* strategy/risk/engine code runs identically in **backtest** and **live** mode — only the data feed and broker are swapped.
 
 > [!WARNING]
-> **Demo/paper trading only.** v1 is validated end-to-end against the eToro **Demo** environment. The `real` switch exists but is **not validated** — running against a real account trades real money. The framework is **long-only** in v1 (short/`SELL` signals are rejected by the risk manager). This software is provided as-is, with no warranty; trading carries risk of loss. You are responsible for any orders it places.
+> **Real trading only through Agent Portfolios.** The demo path is validated end-to-end, and the real path was validated on 2026-08-04 via a supervised order round-trip against an eToro **Agent Portfolio** (a virtual-balance sub-portfolio mirrored proportionally by your real investment — see [docs/going-real.md](docs/going-real.md)). Direct real-account trading with main-account keys is refused at startup. The framework is **long-only** in v1 (short/`SELL` signals are rejected by the risk manager). This software is provided as-is, with no warranty; trading carries risk of loss. You are responsible for any orders it places.
 
 ---
 
