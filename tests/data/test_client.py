@@ -217,3 +217,69 @@ async def test_is_agent_portfolio_key_false_on_other_403():
                    "errorMessage": "UserToken does not have permission"}))
     async with _client() as c:
         assert await c.is_agent_portfolio_key() is False
+
+
+_LOOKUP_URL = f"{BASE}/api/v2/trading/info/orders:lookup"
+
+
+@respx.mock
+async def test_get_order_real_uses_v2_lookup_and_normalizes():
+    # Real order status lives on the v2 lookup endpoint; the response must
+    # be normalized into the legacy shape the broker parses.
+    route = respx.get(_LOOKUP_URL).mock(return_value=httpx.Response(
+        200, json={
+            "orderId": 1548059643,
+            "status": {"id": 3, "name": "Filled", "errorCode": 0},
+            "positionExecutions": [{
+                "positionId": 3533695059,
+                "state": "open",
+                "openingData": {"units": 0.000155, "avgPrice": 64256.0,
+                                "fees": 0.1},
+            }],
+        }))
+    c = EtoroClient(api_key="ak", user_key="uk", env="real")
+    async with c:
+        info = await c.get_order(1548059643)
+    params = dict(route.calls[0].request.url.params)
+    assert params["orderId"] == "1548059643"
+    assert info["positions"] == [{"positionID": 3533695059,
+                                  "rate": 64256.0, "units": 0.000155}]
+    assert "errorCode" not in info
+
+
+@respx.mock
+async def test_get_order_real_normalizes_error_status():
+    respx.get(_LOOKUP_URL).mock(return_value=httpx.Response(
+        200, json={"orderId": 1, "positionExecutions": [],
+                   "status": {"id": 9, "name": "Rejected",
+                              "errorCode": 605,
+                              "errorMessage": "Insufficient funds"}}))
+    c = EtoroClient(api_key="ak", user_key="uk", env="real")
+    async with c:
+        info = await c.get_order(1)
+    assert info["errorCode"] == 605
+    assert info["errorMessage"] == "Insufficient funds"
+    assert info["positions"] == []
+
+
+@respx.mock
+async def test_get_order_real_pending_has_empty_positions():
+    respx.get(_LOOKUP_URL).mock(return_value=httpx.Response(
+        200, json={"orderId": 1, "positionExecutions": [],
+                   "status": {"id": 1, "name": "Pending", "errorCode": 0}}))
+    c = EtoroClient(api_key="ak", user_key="uk", env="real")
+    async with c:
+        info = await c.get_order(1)
+    assert info.get("positions") == []
+    assert "errorCode" not in info
+
+
+@respx.mock
+async def test_get_order_demo_path_unchanged():
+    url = f"{BASE}/api/v1/trading/info/demo/orders/42"
+    respx.get(url).mock(return_value=httpx.Response(
+        200, json={"positions": [{"positionID": 7, "rate": 50000.0,
+                                  "units": 0.0002}]}))
+    async with _client() as c:
+        info = await c.get_order(42)
+    assert info["positions"][0]["positionID"] == 7

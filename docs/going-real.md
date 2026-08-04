@@ -6,7 +6,7 @@ Real-money trading in etorobot is supported **only** through an eToro **Agent Po
 
 An [Agent Portfolio](https://www.etoro.com/news-and-analysis/etoro-updates/agent-portfolios-let-your-ai-agent-trade-for-you/) (Beta) is a real-money sub-portfolio inside your eToro account, built for AI agents and automated strategies:
 
-- **Isolated allocation.** You fund it with an amount you choose (minimum **$200**). The bot can only ever touch that allocation — worst case is bounded by it, not by your account.
+- **Virtual balance, mirrored by real money.** Per [eToro's agent skill](https://www.etoro.com/wp-content/uploads/agent-portfolios/SKILL.md), an agent portfolio trades a **$10,000 virtual balance**; your real investment (minimum **$200**, chosen at creation) **mirrors its trades proportionally** — e.g. a $2,000 investment copies each position at 20% of its virtual size. Your real exposure to any bot position is therefore `position ÷ 10,000 × your investment`, and worst case is bounded by the investment — never your main account.
 - **Scoped credential — two forms.** eToro's **desktop UI** issues the portfolio's credential as a scoped **`x-api-key`/`x-user-key` pair** (Read/Write permissions, optional expiry + IP whitelist). The **API** can additionally mint OAuth **Bearer** user tokens (`Authorization: Bearer <token>`, scopes `etoro-public:trade.real:read|write`). The bot supports both.
 - **Shown once.** Credential values are only visible at creation. Store them immediately in `.env`.
 - **Real-only by construction.** An agent-portfolio pair is rejected by the demo endpoints (`403 InsufficientPermissions`), so it cannot be used for demo sessions.
