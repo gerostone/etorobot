@@ -7,8 +7,9 @@ Real-money trading in etorobot is supported **only** through an eToro **Agent Po
 An [Agent Portfolio](https://www.etoro.com/news-and-analysis/etoro-updates/agent-portfolios-let-your-ai-agent-trade-for-you/) (Beta) is a real-money sub-portfolio inside your eToro account, built for AI agents and automated strategies:
 
 - **Isolated allocation.** You fund it with an amount you choose (minimum **$200**). The bot can only ever touch that allocation — worst case is bounded by it, not by your account.
-- **Scoped credential.** Each portfolio has its own *user token*: an OAuth **Bearer** credential (`Authorization: Bearer <token>`), mutually exclusive with the `x-api-key`/`x-user-key` pair the bot uses for market data. Tokens carry scopes (`etoro-public:trade.real:read|write`) and support an optional **expiry** and **IPv4 whitelist**.
-- **Shown once.** The token value is only visible at creation. Store it immediately in `.env`.
+- **Scoped credential — two forms.** eToro's **desktop UI** issues the portfolio's credential as a scoped **`x-api-key`/`x-user-key` pair** (Read/Write permissions, optional expiry + IP whitelist). The **API** can additionally mint OAuth **Bearer** user tokens (`Authorization: Bearer <token>`, scopes `etoro-public:trade.real:read|write`). The bot supports both.
+- **Shown once.** Credential values are only visible at creation. Store them immediately in `.env`.
+- **Real-only by construction.** An agent-portfolio pair is rejected by the demo endpoints (`403 InsufficientPermissions`), so it cannot be used for demo sessions.
 
 This is why it is the only supported real path: the blast radius is capped, the credential is scoped, and revocation is one click in eToro's UI.
 
@@ -16,15 +17,28 @@ This is why it is the only supported real path: the blast radius is capped, the 
 
 1. Open **Agent Portfolios (Beta)** from the side menu.
 2. Create a portfolio: name it, allocate the budget (≥ $200).
-3. Mint a **real-scoped** user token. Recommended: set an **IP whitelist** (the machine that runs the bot) and an **expiry**.
-4. Copy the token (it will not be shown again) and add it to `.env`:
+3. Create the portfolio's API key with **Read + Write** permissions. Recommended: set an **IP whitelist** (the machine that runs the bot) and an **expiry**.
+4. Copy the credentials (not shown again) and add them to `.env`.
+
+**UI-issued key pair** (the common case — the "private key" is the long `eyJ…` value and maps to `ETORO_USER_KEY`):
+
+```dotenv
+ETORO_API_KEY=the_public_key
+ETORO_USER_KEY=the_long_eyJ_private_key
+ETORO_AGENT_PORTFOLIO=true
+ETORO_ENV=real
+```
+
+`ETORO_AGENT_PORTFOLIO=true` is a claim, not a bypass: at startup the bot probes `GET /api/v1/agent-portfolios` and proceeds only on the distinctive `403 "this gcid is an agent-portfolio"` answer that scoped pairs produce. A main-account pair (which answers `200`) is refused — real trading through your main account stays impossible.
+
+**API-minted Bearer token** (alternative):
 
 ```dotenv
 ETORO_AGENT_TOKEN=your_scoped_token
 ETORO_ENV=real
 ```
 
-The existing `ETORO_API_KEY`/`ETORO_USER_KEY` pair stays in `.env` — it keeps serving candles, instrument lookup, and the WebSocket feed (none of which are portfolio-scoped).
+With a Bearer token, the `ETORO_API_KEY`/`ETORO_USER_KEY` pair stays in `.env` serving candles, instrument lookup, and the WebSocket feed (none of which are portfolio-scoped).
 
 ## Validation runbook
 
@@ -58,10 +72,11 @@ The startup guard enforces the full matrix:
 
 | Condition | Result |
 |---|---|
-| `ETORO_ENV=real`, no `ETORO_AGENT_TOKEN` | refused — direct real-account trading is disabled |
-| `ETORO_ENV=real`, token set, no `--real-money` | refused — the flag is the per-session consent |
-| `ETORO_ENV=real`, token set, `--real-money` | trades the Agent Portfolio |
-| `ETORO_ENV=demo` (with or without token) | demo behavior, no flag needed |
+| `ETORO_ENV=real`, no scoped credential (`ETORO_AGENT_TOKEN` or `ETORO_AGENT_PORTFOLIO=true`) | refused — direct real-account trading is disabled |
+| `ETORO_ENV=real`, `ETORO_AGENT_PORTFOLIO=true` but the pair fails the fingerprint probe | refused — fail-closed |
+| `ETORO_ENV=real`, scoped credential, no `--real-money` | refused — the flag is the per-session consent |
+| `ETORO_ENV=real`, scoped credential (verified), `--real-money` | trades the Agent Portfolio |
+| `ETORO_ENV=demo` | demo behavior, no flag needed (agent-portfolio pairs won't work here) |
 
 The bot remains **long-only**, with all existing risk limits (position sizing, per-instrument and global caps, SL/TP defaults, daily-loss kill-switch) applied unchanged. Runs appear in the dashboard like any other, with `env=real`.
 

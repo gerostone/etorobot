@@ -168,11 +168,34 @@ class EtoroClient:
         resp = await self._request("GET", path, write=False)
         return resp.json()
 
+    async def is_agent_portfolio_key(self) -> bool:
+        # A key pair scoped to an Agent Portfolio (sub-portfolio) cannot list
+        # agent-portfolios: eToro answers 403 "this gcid is an
+        # agent-portfolio". That distinctive refusal is the fingerprint the
+        # real-run guard verifies before allowing pair-auth real trading.
+        # A main-account pair answers 200 here and must NOT pass.
+        try:
+            await self._request("GET", "/api/v1/agent-portfolios",
+                                write=False)
+        except httpx.HTTPStatusError as exc:
+            return (exc.response.status_code == 403
+                    and "agent-portfolio" in exc.response.text)
+        return False
+
     async def resolve_instrument(self, symbol: str) -> int:
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
+        # /api/v1/instruments/{symbol} was removed by eToro (RouteNotFound as
+        # of 2026-08). The market-data search endpoint prefix-filters on
+        # internalSymbolFull, so "BTC" also returns BTCAUD etc. — pick the
+        # exact ticker match, never the first prefix hit.
         resp = await self._request(
-            "GET", f"/api/v1/instruments/{symbol}", write=False)
-        instrument_id = int(resp.json()["instrumentId"])
-        self._instrument_cache[symbol] = instrument_id
-        return instrument_id
+            "GET", "/api/v1/market-data/search", write=False,
+            params={"fields": "instrumentId,internalSymbolFull",
+                    "internalSymbolFull": symbol, "pageSize": 100})
+        for item in resp.json().get("items", []):
+            if item.get("internalSymbolFull", "").upper() == symbol.upper():
+                instrument_id = int(item["instrumentId"])
+                self._instrument_cache[symbol] = instrument_id
+                return instrument_id
+        raise ValueError(f"no instrument found for symbol {symbol!r}")

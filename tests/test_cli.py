@@ -233,3 +233,60 @@ async def test_do_validate_real_wires_data_client(monkeypatch):
     assert seen["client"]._agent_token == "agtok"
     assert seen["data_client"]._agent_token is None
     assert seen["data_client"]._env == "demo"
+
+
+def test_guard_real_with_pair_flag_and_real_money_passes():
+    s = SimpleNamespace(env="real", agent_token=None, agent_portfolio=True)
+    check_real_guard(s, real_money=True)
+
+
+def test_guard_real_with_pair_flag_still_needs_real_money():
+    s = SimpleNamespace(env="real", agent_token=None, agent_portfolio=True)
+    with pytest.raises(SystemExit, match="--real-money"):
+        check_real_guard(s, real_money=False)
+
+
+async def test_verify_agent_pair_refuses_unverified_claim(monkeypatch):
+    class FakeProbe:
+        async def is_agent_portfolio_key(self):
+            return False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr(cli, "_make_trade_client", lambda c: FakeProbe())
+    config = SimpleNamespace(secrets=SimpleNamespace(
+        env="real", agent_token=None, agent_portfolio=True,
+        api_key="ak", user_key="uk"))
+    with pytest.raises(SystemExit, match="does not verify"):
+        await cli._verify_agent_pair(config)
+
+
+async def test_verify_agent_pair_passes_verified_claim(monkeypatch):
+    class FakeProbe:
+        async def is_agent_portfolio_key(self):
+            return True
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr(cli, "_make_trade_client", lambda c: FakeProbe())
+    config = SimpleNamespace(secrets=SimpleNamespace(
+        env="real", agent_token=None, agent_portfolio=True,
+        api_key="ak", user_key="uk"))
+    await cli._verify_agent_pair(config)  # must not raise
+
+
+async def test_verify_agent_pair_skipped_for_demo_and_bearer():
+    # Demo env and Bearer-token sessions never probe; no client is built,
+    # so reaching a network call would blow up the test.
+    await cli._verify_agent_pair(SimpleNamespace(secrets=SimpleNamespace(
+        env="demo", agent_token=None, agent_portfolio=True)))
+    await cli._verify_agent_pair(SimpleNamespace(secrets=SimpleNamespace(
+        env="real", agent_token="tok", agent_portfolio=False)))

@@ -18,7 +18,8 @@ etorobot is configured by two files, split by concern:
 | `ETORO_API_KEY` | yes | — | Your eToro public API key. |
 | `ETORO_USER_KEY` | yes | — | Your eToro user key (the long `eyJ…` token). Sent as the `x-user-key` header. |
 | `ETORO_ENV` | no | `demo` | `demo` or `real`. Selects which endpoint segment the REST client uses. `real` additionally requires `ETORO_AGENT_TOKEN` and the `run --real-money` flag. |
-| `ETORO_AGENT_TOKEN` | no | `None` | Agent Portfolio user token (Bearer). When set, the trading client authenticates with it instead of the key pair. Required for `ETORO_ENV=real`. See [docs/going-real.md](going-real.md). |
+| `ETORO_AGENT_TOKEN` | no | `None` | Agent Portfolio user token (Bearer, API-minted). When set, the trading client authenticates with it instead of the key pair. See [docs/going-real.md](going-real.md). |
+| `ETORO_AGENT_PORTFOLIO` | no | `false` | Claim that the key pair is a UI-issued Agent Portfolio key. Verified at startup (fail-closed fingerprint probe) before any real-money session. One of this or `ETORO_AGENT_TOKEN` is required for `ETORO_ENV=real`. |
 
 ```dotenv
 ETORO_API_KEY=your_public_api_key

@@ -16,6 +16,9 @@ class Secrets(BaseSettings):
     user_key: str
     env: Literal["demo", "real"] = "demo"
     agent_token: str | None = None
+    # Claim that api_key/user_key are a UI-issued Agent Portfolio pair;
+    # verified at startup before any real-money session.
+    agent_portfolio: bool = False
 
 
 class TelegramSecrets(BaseSettings):
