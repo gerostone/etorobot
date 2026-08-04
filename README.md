@@ -94,7 +94,13 @@ etorobot [--config PATH] <command>
   --config PATH        Path to config.yaml (default: config.yaml)
 
 Commands:
-  run                  Run the engine live against the configured eToro env.
+  run [--real-money]   Run the engine live against the configured eToro env.
+                       --real-money is required (with an Agent Portfolio
+                       token) when ETORO_ENV=real.
+  validate-real --amount N [--symbol S]
+                       Supervised order round-trip: every money-moving step
+                       requires a typed confirmation; raw responses are saved
+                       for parser-shape diffing.
   backtest [--candles N]
                        Fetch N candles per instrument (default 500) and
                        backtest the configured strategy, printing metrics.
@@ -217,19 +223,16 @@ ruff check        # lint
 
 `pytest` is configured (`pyproject.toml`) with `asyncio_mode = "auto"` and `pythonpath = ["src"]`, so no manual setup is needed. The eToro REST client is tested with [`respx`](https://lundberg.github.io/respx/) — tests are fully offline.
 
-## Going to a real account (not yet validated)
+## Going to a real account (Agent Portfolios)
 
-The `real` path is implemented but **unvalidated**. Before risking real money:
-
-1. Confirm your keys have real-trading API access and the account holds enough balance to clear eToro's minimum order size.
-2. Validate the order round-trip at **minimum size**, capturing the raw `/real/` responses to confirm their shapes match the `/demo/` ones the parsers were built against.
-3. Only then flip `ETORO_ENV=real`. The client selects demo vs. real purely by endpoint path keyed off this variable — it is a one-word change with real consequences.
+Real trading is supported **only** through an eToro **Agent Portfolio** — a real-money sub-portfolio with its own scoped Bearer token and a capped allocation (min $200). `ETORO_ENV=real` without `ETORO_AGENT_TOKEN` is refused at startup, and every real session additionally requires the explicit `run --real-money` flag. Before going live, run the supervised `etorobot validate-real` round-trip yourself — it confirms the real response shapes match the demo ones the parsers were built against. Full setup and runbook: **[docs/going-real.md](docs/going-real.md)**.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — event flow, components, design decisions
 - [Configuration reference](docs/configuration.md) — every `.env` and `config.yaml` field
 - [Dashboard](docs/dashboard.md) — read-only web view of runs (live + backtests)
+- [Going real: Agent Portfolios](docs/going-real.md) — scoped-token setup and the supervised validation runbook
 - [Writing strategies](docs/strategies.md) — implement and register a custom strategy
 - [Design spec](docs/superpowers/specs/2026-06-01-etoro-bot-design.md) — original design
 - [Implementation plan](docs/superpowers/plans/2026-06-01-etoro-bot.md) — task-by-task build log
