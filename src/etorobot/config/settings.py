@@ -15,6 +15,7 @@ class Secrets(BaseSettings):
     api_key: str
     user_key: str
     env: Literal["demo", "real"] = "demo"
+    agent_token: str | None = None
 
 
 class TelegramSecrets(BaseSettings):
