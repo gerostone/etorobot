@@ -40,18 +40,38 @@ def _make_trade_client(config: AppConfig) -> EtoroClient:
 
 
 def check_real_guard(secrets, real_money: bool) -> None:
-    """Refuse real-money sessions that lack the token or the explicit flag."""
+    """Refuse real-money sessions lacking a scoped credential or the flag."""
     if secrets.env != "real":
         return
-    if not secrets.agent_token:
+    if not (secrets.agent_token
+            or getattr(secrets, "agent_portfolio", False)):
         raise SystemExit(
-            "ETORO_ENV=real requires an Agent Portfolio token "
-            "(ETORO_AGENT_TOKEN). Direct real-account trading without a "
-            "scoped token is disabled.")
+            "ETORO_ENV=real requires a scoped Agent Portfolio credential: "
+            "either ETORO_AGENT_TOKEN (Bearer) or ETORO_AGENT_PORTFOLIO=true "
+            "for a UI-issued agent-portfolio key pair. Direct real-account "
+            "trading is disabled.")
     if not real_money:
         raise SystemExit(
             "Refusing to start a real-money session without --real-money. "
             "Re-run as: etorobot run --real-money")
+
+
+async def _verify_agent_pair(config: AppConfig) -> None:
+    """Verify an ETORO_AGENT_PORTFOLIO=true claim before real trading.
+
+    Fail closed: the pair must produce the distinctive 403 "this gcid is an
+    agent-portfolio" fingerprint on /api/v1/agent-portfolios. A main-account
+    pair answers 200 there and is refused.
+    """
+    if config.secrets.env != "real" or config.secrets.agent_token:
+        return
+    probe = _make_trade_client(config)
+    async with probe:
+        if not await probe.is_agent_portfolio_key():
+            raise SystemExit(
+                "ETORO_AGENT_PORTFOLIO=true but the configured key pair "
+                "does not verify as an agent-portfolio credential — "
+                "refusing to trade real money with it.")
 
 
 def _make_notifier(config: AppConfig):
@@ -91,6 +111,7 @@ async def do_backtest(config: AppConfig, client, candles_count: int = 500,
 
 async def do_run(config: AppConfig, client, real_money: bool = False) -> None:
     check_real_guard(config.secrets, real_money)
+    await _verify_agent_pair(config)
     instruments: dict[int, str] = {}
     async with client:
         for inst in config.instruments:
@@ -136,6 +157,7 @@ async def do_validate_real(config: AppConfig, amount: float,
     # consent gate, so no --real-money flag is required here; the token
     # requirement for env=real still applies.
     check_real_guard(config.secrets, real_money=True)
+    await _verify_agent_pair(config)
     from etorobot.validate import run_validation
 
     if not 0 < amount <= 1000:
