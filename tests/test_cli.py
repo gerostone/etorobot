@@ -92,7 +92,7 @@ def test_run_parser_accepts_real_money_flag(monkeypatch):
         seen["real_money"] = real_money
 
     monkeypatch.setattr(cli, "load_config", lambda p: SimpleNamespace())
-    monkeypatch.setattr(cli, "_make_client", lambda c: object())
+    monkeypatch.setattr(cli, "_make_data_client", lambda c: object())
     monkeypatch.setattr(cli, "do_run", fake_do_run)
     monkeypatch.setattr(sys, "argv", ["etorobot", "run", "--real-money"])
     cli.main()
@@ -122,3 +122,93 @@ async def test_do_validate_real_refuses_real_without_token():
         instruments=[SimpleNamespace(symbol="BTC")])
     with pytest.raises(SystemExit, match="ETORO_AGENT_TOKEN"):
         await cli.do_validate_real(config, amount=10.0)
+
+
+async def test_make_data_client_pinned_to_demo():
+    # async: EtoroClient's TokenBucket needs a running event loop.
+    config = SimpleNamespace(secrets=SimpleNamespace(
+        env="real", agent_token="tok", api_key="ak", user_key="uk"))
+    c = cli._make_data_client(config)
+    assert c._env == "demo"
+    assert c._agent_token is None
+
+
+async def test_do_validate_real_rejects_bad_amounts():
+    config = SimpleNamespace(
+        secrets=SimpleNamespace(env="demo", agent_token=None,
+                                api_key="ak", user_key="uk"),
+        instruments=[SimpleNamespace(symbol="BTC")])
+    with pytest.raises(SystemExit, match="amount"):
+        await cli.do_validate_real(config, amount=0)
+    with pytest.raises(SystemExit, match="amount"):
+        await cli.do_validate_real(config, amount=-5)
+    with pytest.raises(SystemExit, match="amount"):
+        await cli.do_validate_real(config, amount=5000)
+
+
+async def test_do_validate_real_requires_an_instrument_or_symbol():
+    config = SimpleNamespace(
+        secrets=SimpleNamespace(env="demo", agent_token=None,
+                                api_key="ak", user_key="uk"),
+        instruments=[])
+    with pytest.raises(SystemExit, match="symbol"):
+        await cli.do_validate_real(config, amount=10.0)
+
+
+async def test_do_run_splits_planes_bearer_broker_pair_feed(monkeypatch):
+    captured = {}
+
+    class FakeFeed:
+        def __init__(self, api_key, user_key, instruments, timeframe):
+            captured["feed_keys"] = (api_key, user_key)
+
+    class FakeBroker:
+        def __init__(self, client):
+            captured["broker_client"] = client
+
+    class FakeEngine:
+        def __init__(self, **kw):
+            pass
+
+        async def run(self):
+            return None
+
+    class FakeRepo:
+        def __init__(self, url):
+            pass
+
+        def create_run(self, **kw):
+            return 1
+
+        def finish_run(self, run_id, status):
+            pass
+
+    class FakeDataClient:
+        async def resolve_instrument(self, symbol):
+            return 100000
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+    monkeypatch.setattr(cli, "LiveFeed", FakeFeed)
+    monkeypatch.setattr(cli, "EtoroBroker", FakeBroker)
+    monkeypatch.setattr(cli, "Engine", FakeEngine)
+    monkeypatch.setattr(cli, "Repository", FakeRepo)
+    monkeypatch.setattr(cli, "build_strategy", lambda name, params: object())
+    monkeypatch.setattr(cli, "RiskManager", lambda risk: object())
+    config = SimpleNamespace(
+        secrets=SimpleNamespace(env="demo", agent_token="agtok",
+                                api_key="ak", user_key="uk"),
+        instruments=[SimpleNamespace(symbol="BTC")],
+        timeframe="OneMinute",
+        strategy=SimpleNamespace(name="s", params={}),
+        risk=object(),
+        telegram=SimpleNamespace(token=None, chat_id=None))
+    await cli.do_run(config, FakeDataClient())
+    # The broker's client authenticates with the scoped Bearer token...
+    assert captured["broker_client"]._agent_token == "agtok"
+    # ...while the WebSocket feed keeps the raw key pair.
+    assert captured["feed_keys"] == ("ak", "uk")

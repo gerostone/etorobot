@@ -23,6 +23,14 @@ def _make_client(config: AppConfig) -> EtoroClient:
                        config.secrets.env)
 
 
+def _make_data_client(config: AppConfig) -> EtoroClient:
+    # Data-plane client: pair auth pinned to demo so the unscoped key pair
+    # can never touch a real-money endpoint. Candles and instrument lookups
+    # use env-independent paths, so demo is always correct here.
+    return EtoroClient(config.secrets.api_key, config.secrets.user_key,
+                       "demo")
+
+
 def _make_trade_client(config: AppConfig) -> EtoroClient:
     # Execution-plane client: authenticates with the scoped Agent Portfolio
     # Bearer token when one is configured, else falls back to the key pair.
@@ -130,7 +138,15 @@ async def do_validate_real(config: AppConfig, amount: float,
     check_real_guard(config.secrets, real_money=True)
     from etorobot.validate import run_validation
 
-    symbol = symbol or config.instruments[0].symbol
+    if not 0 < amount <= 1000:
+        raise SystemExit(
+            "--amount must be a positive dollar figure of at most 1000 — "
+            "validation runs are meant to be minimum-size.")
+    if symbol is None:
+        if not config.instruments:
+            raise SystemExit(
+                "No instruments configured; pass --symbol explicitly.")
+        symbol = config.instruments[0].symbol
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = f"validation_{config.secrets.env}_{stamp}.json"
     client = _make_trade_client(config)
@@ -157,7 +173,7 @@ def main() -> None:
     config = load_config(args.config)
 
     if args.command == "run":
-        asyncio.run(do_run(config, _make_client(config),
+        asyncio.run(do_run(config, _make_data_client(config),
                            real_money=args.real_money))
     elif args.command == "backtest":
         metrics = asyncio.run(
