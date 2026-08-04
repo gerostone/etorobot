@@ -150,8 +150,10 @@ async def do_validate_real(config: AppConfig, amount: float,
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = f"validation_{config.secrets.env}_{stamp}.json"
     client = _make_trade_client(config)
-    async with client:
-        await run_validation(client, symbol, amount, out_path)
+    data_client = _make_data_client(config)
+    async with client, data_client:
+        await run_validation(client, symbol, amount, out_path,
+                             data_client=data_client)
 
 
 def main() -> None:

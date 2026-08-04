@@ -170,3 +170,33 @@ async def test_exception_after_open_still_persists_and_warns(tmp_path):
     assert saved["steps"]["open_response"]["orderId"] == 42
     assert saved["error"]
     assert any("OPEN" in line and "42" in line for line in printed)
+
+
+async def test_sl_tp_uses_data_client_when_provided(tmp_path):
+    client = FakeClient()  # trade client has no get_candles at all
+
+    class DataOnly:
+        async def get_candles(self, instrument_id, symbol, interval, count=1):
+            from types import SimpleNamespace
+            return [SimpleNamespace(close=50000.0)]
+
+    await run_validation(client, "BTC", 10.0, str(tmp_path / "v.json"),
+                         input_fn=_inputs("open", "close"),
+                         print_fn=lambda *_: None, poll_interval=0,
+                         data_client=DataOnly())
+    assert client.order_kw["stop_loss"] == 47500.0
+    assert client.order_kw["take_profit"] == 52500.0
+
+
+async def test_sl_tp_failure_is_reported_not_silent(tmp_path):
+    client = FakeClient()  # no get_candles anywhere -> lookup fails
+    printed = []
+    await run_validation(client, "BTC", 10.0, str(tmp_path / "v.json"),
+                         input_fn=_inputs("open", "close"),
+                         print_fn=lambda *a: printed.append(
+                             " ".join(map(str, a))),
+                         poll_interval=0)
+    assert any("Price lookup" in line for line in printed)
+    assert any("WARNING" in line and "unprotected" in line
+               for line in printed)
+    assert client.order_kw["stop_loss"] is None

@@ -21,27 +21,28 @@ def _write(log: dict, out_path: str, print_fn) -> dict:
     return log
 
 
-async def _sl_tp(client, instrument_id: int,
-                 symbol: str) -> tuple[float | None, float | None]:
+async def _sl_tp(client, instrument_id: int, symbol: str,
+                 print_fn) -> tuple[float | None, float | None]:
     # Derive a wide protective bracket (±5%) from the last candle so the
-    # validation order carries SL/TP like production orders do. Best-effort:
-    # if the price can't be fetched the order goes out unprotected and the
-    # harness says so.
+    # validation order carries SL/TP like production orders do. Best-effort,
+    # but never silent: if the price can't be fetched the failure reason is
+    # printed and the order goes out unprotected (the caller warns).
     try:
         candles = await client.get_candles(instrument_id, symbol,
                                            "OneMinute", count=1)
         if candles:
             last = candles[-1].close
             return round(last * 0.95, 6), round(last * 1.05, 6)
-    except Exception:
-        pass
+    except Exception as exc:
+        print_fn(f"Price lookup for SL/TP failed: {exc!r}")
     return None, None
 
 
 async def run_validation(client, symbol: str, amount: float, out_path: str,
                          input_fn=input, print_fn=print,
                          poll_attempts: int = 40,
-                         poll_interval: float = 0.5) -> dict:
+                         poll_interval: float = 0.5,
+                         data_client=None) -> dict:
     log: dict = {"symbol": symbol, "amount": amount, "aborted": None,
                  "steps": {}}
     iid = await client.resolve_instrument(symbol)
@@ -51,7 +52,10 @@ async def run_validation(client, symbol: str, amount: float, out_path: str,
     credit = portfolio.get("clientPortfolio", {}).get("credit")
     print_fn(f"Available credit: {credit}")
 
-    sl, tp = await _sl_tp(client, iid, symbol)
+    # Prices come from the data plane: the agent-portfolio token's scopes
+    # cover trading, not market data, so SL/TP derivation must not depend
+    # on the trade client. Fall back to it only when no data client exists.
+    sl, tp = await _sl_tp(data_client or client, iid, symbol, print_fn)
     print_fn(f"About to OPEN a market BUY of ${amount} {symbol} "
              f"(SL {sl}, TP {tp}).")
     if sl is None:
