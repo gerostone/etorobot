@@ -39,8 +39,8 @@ etorobot validate-real --amount 10
 What happens, step by step:
 
 1. Resolves the instrument and prints your portfolio's available credit.
-2. Shows the intended market **BUY** of `--amount` dollars and waits. Type **`open`** to place it — anything else aborts (`before-open`, nothing placed).
-3. Polls the order until it fills; prints the raw status. If it never resolves (`order-unresolved`), check the eToro app — it may still fill.
+2. Shows the intended market **BUY** of `--amount` dollars (at most $1000), with a wide ±5% SL/TP bracket derived from the last candle, and waits. Type **`open`** to place it — anything else aborts (`before-open`, nothing placed).
+3. Polls the order until it fills; prints the raw status. A rejected order stops with the API's error message (`order-rejected`). If the response shape is unexpected (`open-shape-unexpected`) or the order never resolves (`order-unresolved`), check the eToro app — in the latter case it may still fill.
 4. Waits again. Type **`close`** to close the position — anything else aborts (`before-close`) **leaving the position open**; close it in the eToro app or re-run.
 5. Polls trade history until the close settles (`close-unsettled` if it doesn't appear yet — verify in the app).
 
