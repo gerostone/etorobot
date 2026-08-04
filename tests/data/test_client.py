@@ -187,3 +187,33 @@ async def test_pair_401_keeps_generic_http_error():
     async with EtoroClient(api_key="ak", user_key="uk", env="demo") as c:
         with pytest.raises(httpx.HTTPStatusError):
             await c.resolve_instrument("BTC")
+
+
+_AP_URL = f"{BASE}/api/v1/agent-portfolios"
+
+
+@respx.mock
+async def test_is_agent_portfolio_key_true_on_fingerprint_403():
+    respx.get(_AP_URL).mock(return_value=httpx.Response(
+        403, json={"errorCode": "Forbidden",
+                   "errorMessage": "Operation not allowed: this gcid is "
+                                   "an agent-portfolio"}))
+    async with _client() as c:
+        assert await c.is_agent_portfolio_key() is True
+
+
+@respx.mock
+async def test_is_agent_portfolio_key_false_for_main_account_200():
+    respx.get(_AP_URL).mock(return_value=httpx.Response(
+        200, json={"agentPortfolios": []}))
+    async with _client() as c:
+        assert await c.is_agent_portfolio_key() is False
+
+
+@respx.mock
+async def test_is_agent_portfolio_key_false_on_other_403():
+    respx.get(_AP_URL).mock(return_value=httpx.Response(
+        403, json={"errorCode": "InsufficientPermissions",
+                   "errorMessage": "UserToken does not have permission"}))
+    async with _client() as c:
+        assert await c.is_agent_portfolio_key() is False

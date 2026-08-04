@@ -168,6 +168,20 @@ class EtoroClient:
         resp = await self._request("GET", path, write=False)
         return resp.json()
 
+    async def is_agent_portfolio_key(self) -> bool:
+        # A key pair scoped to an Agent Portfolio (sub-portfolio) cannot list
+        # agent-portfolios: eToro answers 403 "this gcid is an
+        # agent-portfolio". That distinctive refusal is the fingerprint the
+        # real-run guard verifies before allowing pair-auth real trading.
+        # A main-account pair answers 200 here and must NOT pass.
+        try:
+            await self._request("GET", "/api/v1/agent-portfolios",
+                                write=False)
+        except httpx.HTTPStatusError as exc:
+            return (exc.response.status_code == 403
+                    and "agent-portfolio" in exc.response.text)
+        return False
+
     async def resolve_instrument(self, symbol: str) -> int:
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
