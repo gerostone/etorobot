@@ -18,6 +18,7 @@ class FakeClient:
 
     async def create_order(self, **kw):
         self.calls.append("open")
+        self.order_kw = kw
         return {"token": "t", "orderId": 42, "referenceId": "r"}
 
     async def get_order(self, order_id):
@@ -77,3 +78,95 @@ async def test_abort_at_close_reports_open_position(tmp_path):
     assert "close" not in client.calls
     assert result["aborted"] == "before-close"
     assert any("7" in line and "OPEN" in line for line in printed)
+
+
+class CandleClient(FakeClient):
+    async def get_candles(self, instrument_id, symbol, interval, count=1):
+        from types import SimpleNamespace
+        return [SimpleNamespace(close=50000.0)]
+
+
+class UnresolvedClient(FakeClient):
+    async def get_order(self, order_id):
+        self.calls.append("get_order")
+        return {}
+
+
+class RejectedClient(FakeClient):
+    async def get_order(self, order_id):
+        self.calls.append("get_order")
+        return {"errorCode": 605, "errorMessage": "Insufficient funds"}
+
+
+class NoSettleClient(FakeClient):
+    async def get_trade_history(self, min_date, page=1, page_size=50):
+        self.calls.append("history")
+        return []
+
+
+class ExplodingClient(FakeClient):
+    async def get_order(self, order_id):
+        raise RuntimeError("boom")
+
+
+async def test_sl_tp_derived_from_last_candle_and_forwarded(tmp_path):
+    client = CandleClient()
+    await run_validation(client, "BTC", 10.0, str(tmp_path / "v.json"),
+                         input_fn=_inputs("open", "close"),
+                         print_fn=lambda *_: None, poll_interval=0)
+    assert client.order_kw["stop_loss"] == 47500.0
+    assert client.order_kw["take_profit"] == 52500.0
+
+
+async def test_order_unresolved_reports_and_persists(tmp_path):
+    client = UnresolvedClient()
+    out = tmp_path / "v.json"
+    result = await run_validation(client, "BTC", 10.0, str(out),
+                                  input_fn=_inputs("open"),
+                                  print_fn=lambda *_: None,
+                                  poll_attempts=2, poll_interval=0)
+    assert result["aborted"] == "order-unresolved"
+    assert json.loads(out.read_text())["steps"]["open_response"]["orderId"] == 42
+
+
+async def test_rejected_order_reports_error_message(tmp_path):
+    client = RejectedClient()
+    printed = []
+    result = await run_validation(client, "BTC", 10.0,
+                                  str(tmp_path / "v.json"),
+                                  input_fn=_inputs("open"),
+                                  print_fn=lambda *a: printed.append(
+                                      " ".join(map(str, a))),
+                                  poll_interval=0)
+    assert result["aborted"] == "order-rejected"
+    assert "close" not in client.calls
+    assert any("Insufficient funds" in line for line in printed)
+    assert not any("may still fill" in line for line in printed)
+
+
+async def test_close_unsettled_reported(tmp_path):
+    client = NoSettleClient()
+    result = await run_validation(client, "BTC", 10.0,
+                                  str(tmp_path / "v.json"),
+                                  input_fn=_inputs("open", "close"),
+                                  print_fn=lambda *_: None,
+                                  poll_attempts=2, poll_interval=0)
+    assert result["aborted"] == "close-unsettled"
+    assert client.calls.count("close") == 1
+
+
+async def test_exception_after_open_still_persists_and_warns(tmp_path):
+    import pytest
+    client = ExplodingClient()
+    out = tmp_path / "v.json"
+    printed = []
+    with pytest.raises(RuntimeError, match="boom"):
+        await run_validation(client, "BTC", 10.0, str(out),
+                             input_fn=_inputs("open"),
+                             print_fn=lambda *a: printed.append(
+                                 " ".join(map(str, a))),
+                             poll_interval=0)
+    saved = json.loads(out.read_text())
+    assert saved["steps"]["open_response"]["orderId"] == 42
+    assert saved["error"]
+    assert any("OPEN" in line and "42" in line for line in printed)
