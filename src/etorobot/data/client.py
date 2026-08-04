@@ -55,6 +55,16 @@ class EtoroClient:
             resp = await self._http.request(method, url, headers=self._headers(),
                                             **kw)
             if resp.status_code != 429:
+                # A rejected Bearer credential deserves a clearer failure
+                # than a bare HTTPStatusError: name the token as the likely
+                # cause so the user knows what to rotate.
+                if (resp.status_code in (401, 403)
+                        and self._agent_token is not None):
+                    raise PermissionError(
+                        f"eToro API returned {resp.status_code}: the "
+                        "agent-portfolio token (ETORO_AGENT_TOKEN) was "
+                        "rejected — likely expired, blocked by its IP "
+                        "whitelist, or missing the required scope.")
                 resp.raise_for_status()
                 return resp
             await asyncio.sleep(_backoff_base * (2 ** attempt))

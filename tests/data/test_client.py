@@ -1,6 +1,8 @@
 # tests/data/test_client.py
 import json
 
+import pytest
+
 import httpx
 import respx
 from datetime import datetime
@@ -143,3 +145,22 @@ async def test_no_agent_token_keeps_pair_auth():
     assert sent.headers["x-api-key"] == "ak"
     assert sent.headers["x-user-key"] == "uk"
     assert "Authorization" not in sent.headers
+
+
+@respx.mock
+async def test_bearer_401_names_the_agent_token():
+    respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+        return_value=httpx.Response(401, json={"message": "unauthorized"}))
+    async with EtoroClient(api_key="ak", user_key="uk", env="demo",
+                           agent_token="agtok") as c:
+        with pytest.raises(PermissionError, match="ETORO_AGENT_TOKEN"):
+            await c.resolve_instrument("BTC")
+
+
+@respx.mock
+async def test_pair_401_keeps_generic_http_error():
+    respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+        return_value=httpx.Response(401, json={"message": "unauthorized"}))
+    async with EtoroClient(api_key="ak", user_key="uk", env="demo") as c:
+        with pytest.raises(httpx.HTTPStatusError):
+            await c.resolve_instrument("BTC")
