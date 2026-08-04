@@ -116,3 +116,30 @@ async def test_retries_on_429_then_succeeds():
                                       _backoff_base=0.001)
     assert candles == []
     assert route.call_count == 2
+
+
+@respx.mock
+async def test_agent_token_switches_to_bearer_auth():
+    route = respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+        return_value=httpx.Response(200, json={"instrumentId": 100000}))
+    async with EtoroClient(api_key="ak", user_key="uk", env="demo",
+                           agent_token="agtok") as c:
+        await c.resolve_instrument("BTC")
+    sent = route.calls[0].request
+    assert sent.headers["Authorization"] == "Bearer agtok"
+    # Bearer and the key pair are mutually exclusive on the eToro API.
+    assert "x-api-key" not in sent.headers
+    assert "x-user-key" not in sent.headers
+    assert sent.headers["x-request-id"]
+
+
+@respx.mock
+async def test_no_agent_token_keeps_pair_auth():
+    route = respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+        return_value=httpx.Response(200, json={"instrumentId": 100000}))
+    async with EtoroClient(api_key="ak", user_key="uk", env="demo") as c:
+        await c.resolve_instrument("BTC")
+    sent = route.calls[0].request
+    assert sent.headers["x-api-key"] == "ak"
+    assert sent.headers["x-user-key"] == "uk"
+    assert "Authorization" not in sent.headers

@@ -14,10 +14,12 @@ BASE_URL = "https://public-api.etoro.com"
 
 
 class EtoroClient:
-    def __init__(self, api_key: str, user_key: str, env: str = "demo") -> None:
+    def __init__(self, api_key: str, user_key: str, env: str = "demo",
+                 agent_token: str | None = None) -> None:
         self._api_key = api_key
         self._user_key = user_key
         self._env = env
+        self._agent_token = agent_token
         self._http = httpx.AsyncClient(base_url=BASE_URL, timeout=30.0)
         self._read_bucket = TokenBucket(capacity=60, refill_per_sec=1.0)
         self._write_bucket = TokenBucket(capacity=20, refill_per_sec=20 / 60)
@@ -30,6 +32,14 @@ class EtoroClient:
         await self._http.aclose()
 
     def _headers(self) -> dict[str, str]:
+        # Agent Portfolio tokens are OAuth Bearer credentials and are mutually
+        # exclusive with the x-api-key/x-user-key pair on the eToro API.
+        if self._agent_token is not None:
+            return {
+                "Authorization": f"Bearer {self._agent_token}",
+                "x-request-id": str(uuid.uuid4()),
+                "Content-Type": "application/json",
+            }
         return {
             "x-api-key": self._api_key,
             "x-user-key": self._user_key,
