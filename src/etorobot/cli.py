@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
 
 from etorobot.backtest.runner import run_backtest
 from etorobot.brokers.etoro import EtoroBroker
@@ -121,6 +122,22 @@ def do_dashboard(host: str, port: int, db_url: str) -> None:
     uvicorn.run(create_app(db_url, token=token), host=host, port=port)
 
 
+async def do_validate_real(config: AppConfig, amount: float,
+                           symbol: str | None = None) -> None:
+    # The interactive typed confirmations inside run_validation are the
+    # consent gate, so no --real-money flag is required here; the token
+    # requirement for env=real still applies.
+    check_real_guard(config.secrets, real_money=True)
+    from etorobot.validate import run_validation
+
+    symbol = symbol or config.instruments[0].symbol
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_path = f"validation_{config.secrets.env}_{stamp}.json"
+    client = _make_trade_client(config)
+    async with client:
+        await run_validation(client, symbol, amount, out_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="etorobot")
     parser.add_argument("--config", default="config.yaml")
@@ -133,6 +150,9 @@ def main() -> None:
     dash.add_argument("--host", default="127.0.0.1")
     dash.add_argument("--port", type=int, default=8000)
     dash.add_argument("--db", default=None)
+    val = sub.add_parser("validate-real")
+    val.add_argument("--amount", type=float, required=True)
+    val.add_argument("--symbol", default=None)
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -147,6 +167,9 @@ def main() -> None:
     elif args.command == "dashboard":
         db = args.db or f"bot_{config.secrets.env}.db"
         do_dashboard(args.host, args.port, f"sqlite:///{db}")
+    elif args.command == "validate-real":
+        asyncio.run(do_validate_real(config, amount=args.amount,
+                                     symbol=args.symbol))
 
 
 if __name__ == "__main__":

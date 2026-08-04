@@ -97,3 +97,28 @@ def test_run_parser_accepts_real_money_flag(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["etorobot", "run", "--real-money"])
     cli.main()
     assert seen["real_money"] is True
+
+
+def test_validate_real_dispatch(monkeypatch):
+    seen = {}
+
+    async def fake_validate(config, amount, symbol=None):
+        seen["amount"] = amount
+        seen["symbol"] = symbol
+
+    monkeypatch.setattr(cli, "load_config", lambda p: SimpleNamespace())
+    monkeypatch.setattr(cli, "do_validate_real", fake_validate)
+    monkeypatch.setattr(
+        sys, "argv",
+        ["etorobot", "validate-real", "--amount", "10", "--symbol", "BTC"])
+    cli.main()
+    assert seen == {"amount": 10.0, "symbol": "BTC"}
+
+
+async def test_do_validate_real_refuses_real_without_token():
+    config = SimpleNamespace(
+        secrets=SimpleNamespace(env="real", agent_token=None,
+                                api_key="ak", user_key="uk"),
+        instruments=[SimpleNamespace(symbol="BTC")])
+    with pytest.raises(SystemExit, match="ETORO_AGENT_TOKEN"):
+        await cli.do_validate_real(config, amount=10.0)
