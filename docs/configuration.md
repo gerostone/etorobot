@@ -17,7 +17,8 @@ etorobot is configured by two files, split by concern:
 |----------|----------|---------|-------|
 | `ETORO_API_KEY` | yes | — | Your eToro public API key. |
 | `ETORO_USER_KEY` | yes | — | Your eToro user key (the long `eyJ…` token). Sent as the `x-user-key` header. |
-| `ETORO_ENV` | no | `demo` | `demo` or `real`. Selects which endpoint segment the REST client uses. **The same keys are used for both** — only the URL path changes. |
+| `ETORO_ENV` | no | `demo` | `demo` or `real`. Selects which endpoint segment the REST client uses. `real` additionally requires `ETORO_AGENT_TOKEN` and the `run --real-money` flag. |
+| `ETORO_AGENT_TOKEN` | no | `None` | Agent Portfolio user token (Bearer). When set, the trading client authenticates with it instead of the key pair. Required for `ETORO_ENV=real`. See [docs/going-real.md](going-real.md). |
 
 ```dotenv
 ETORO_API_KEY=your_public_api_key
@@ -25,7 +26,7 @@ ETORO_USER_KEY=your_user_key
 ETORO_ENV=demo
 ```
 
-> `ETORO_ENV=real` trades real money and is **not validated** in v1. See the README's "Going to a real account" section before flipping it.
+> `ETORO_ENV=real` trades real money and is only supported through an eToro **Agent Portfolio** (scoped Bearer token, capped allocation). Follow [docs/going-real.md](going-real.md) before flipping it.
 
 ### Telegram notifications (`TELEGRAM_` prefix) — `TelegramSecrets`
 
