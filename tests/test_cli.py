@@ -1,11 +1,16 @@
 # tests/test_cli.py
+import sys
 from datetime import datetime, timezone, timedelta
+from types import SimpleNamespace
+
+import pytest
 
 from etorobot.config.settings import (
     AppConfig, Secrets, TelegramSecrets, InstrumentConfig, StrategyConfig,
     RiskConfig, BacktestConfig)
 from etorobot.core.types import Candle
-from etorobot.cli import do_backtest
+from etorobot import cli
+from etorobot.cli import do_backtest, check_real_guard
 from etorobot.persistence.repo import Repository
 
 
@@ -55,3 +60,40 @@ async def test_do_backtest_records_a_finished_run(tmp_path):
     assert runs[0]["mode"] == "backtest"
     assert runs[0]["status"] == "finished"
     assert runs[0]["ended_at"] is not None
+
+
+def _secrets(env="demo", agent_token=None):
+    return SimpleNamespace(env=env, agent_token=agent_token)
+
+
+def test_guard_demo_always_passes():
+    check_real_guard(_secrets("demo"), real_money=False)
+    check_real_guard(_secrets("demo", "tok"), real_money=False)
+
+
+def test_guard_real_without_token_refused():
+    with pytest.raises(SystemExit, match="ETORO_AGENT_TOKEN"):
+        check_real_guard(_secrets("real"), real_money=True)
+
+
+def test_guard_real_without_flag_refused():
+    with pytest.raises(SystemExit, match="--real-money"):
+        check_real_guard(_secrets("real", "tok"), real_money=False)
+
+
+def test_guard_real_with_token_and_flag_passes():
+    check_real_guard(_secrets("real", "tok"), real_money=True)
+
+
+def test_run_parser_accepts_real_money_flag(monkeypatch):
+    seen = {}
+
+    async def fake_do_run(config, client, real_money=False):
+        seen["real_money"] = real_money
+
+    monkeypatch.setattr(cli, "load_config", lambda p: SimpleNamespace())
+    monkeypatch.setattr(cli, "_make_client", lambda c: object())
+    monkeypatch.setattr(cli, "do_run", fake_do_run)
+    monkeypatch.setattr(sys, "argv", ["etorobot", "run", "--real-money"])
+    cli.main()
+    assert seen["real_money"] is True
