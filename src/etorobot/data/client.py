@@ -13,6 +13,25 @@ from etorobot.data.ratelimit import TokenBucket
 BASE_URL = "https://public-api.etoro.com"
 
 
+def _normalize_order_lookup(data: dict) -> dict:
+    # Map the v2 orders:lookup shape onto the legacy demo shape the broker
+    # parses: top-level errorCode/errorMessage when the order failed, and a
+    # "positions" array with rate/units/positionID once executed.
+    out: dict = {}
+    status = data.get("status") or {}
+    if status.get("errorCode"):
+        out["errorCode"] = status["errorCode"]
+        out["errorMessage"] = status.get("errorMessage") or status.get("name")
+    positions = []
+    for pe in data.get("positionExecutions") or []:
+        opening = pe.get("openingData") or {}
+        positions.append({"positionID": pe.get("positionId"),
+                          "rate": opening.get("avgPrice"),
+                          "units": opening.get("units")})
+    out["positions"] = positions
+    return out
+
+
 class EtoroClient:
     def __init__(self, api_key: str, user_key: str, env: str = "demo",
                  agent_token: str | None = None) -> None:
@@ -124,11 +143,18 @@ class EtoroClient:
         return resp.json()
 
     async def get_order(self, order_id: str | int) -> dict:
-        # Order status lookup. Once the order resolves, the response carries a
-        # "positions" array with the realized rate/units/positionID.
-        segment = "real" if self._env == "real" else "demo"
+        # Order status lookup. Demo keeps the v1 route; real order status
+        # lives ONLY on the v2 lookup endpoint (there is no
+        # /trading/info/real/orders/{id} — 404 RouteNotFound, discovered
+        # during live validation 2026-08-04). The v2 shape is normalized
+        # into the legacy demo shape the broker parses.
+        if self._env == "real":
+            resp = await self._request(
+                "GET", "/api/v2/trading/info/orders:lookup", write=False,
+                params={"orderId": order_id})
+            return _normalize_order_lookup(resp.json())
         resp = await self._request(
-            "GET", f"/api/v1/trading/info/{segment}/orders/{order_id}",
+            "GET", f"/api/v1/trading/info/demo/orders/{order_id}",
             write=False)
         return resp.json()
 
