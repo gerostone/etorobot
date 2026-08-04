@@ -92,11 +92,18 @@ async def test_get_trade_history_sends_min_date():
     assert trades[0]["closeRate"] == 510.0
 
 
+_SEARCH_URL = f"{BASE}/api/v1/market-data/search"
+_SEARCH_JSON = {"page": 1, "pageSize": 100, "totalItems": 2,
+                "items": [{"internalSymbolFull": "BTCAUD",
+                           "instrumentId": 100154},
+                          {"internalSymbolFull": "BTC",
+                           "instrumentId": 100000}]}
+
+
 @respx.mock
-async def test_resolve_instrument_hits_by_symbol_endpoint():
-    url = f"{BASE}/api/v1/instruments/BTC"
-    route = respx.get(url).mock(return_value=httpx.Response(
-        200, json={"instrumentId": 100000, "symbol": "BTC"}))
+async def test_resolve_instrument_uses_search_and_exact_match():
+    route = respx.get(_SEARCH_URL).mock(return_value=httpx.Response(
+        200, json=_SEARCH_JSON))
     async with _client() as c:
         instrument_id = await c.resolve_instrument("BTC")
         # Second lookup must be served from cache, not a new request.
@@ -104,6 +111,22 @@ async def test_resolve_instrument_hits_by_symbol_endpoint():
     assert instrument_id == 100000
     assert cached == 100000
     assert route.call_count == 1
+    params = dict(route.calls[0].request.url.params)
+    # The search endpoint prefix-filters on internalSymbolFull; the client
+    # must ask for it and pick the exact match, not the first prefix hit.
+    assert params["internalSymbolFull"] == "BTC"
+    assert "instrumentId" in params["fields"]
+
+
+@respx.mock
+async def test_resolve_instrument_raises_when_no_exact_match():
+    respx.get(_SEARCH_URL).mock(return_value=httpx.Response(
+        200, json={"page": 1, "pageSize": 100, "totalItems": 1,
+                   "items": [{"internalSymbolFull": "BTCAUD",
+                              "instrumentId": 100154}]}))
+    async with _client() as c:
+        with pytest.raises(ValueError, match="BTC"):
+            await c.resolve_instrument("BTC")
 
 
 @respx.mock
@@ -122,8 +145,8 @@ async def test_retries_on_429_then_succeeds():
 
 @respx.mock
 async def test_agent_token_switches_to_bearer_auth():
-    route = respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
-        return_value=httpx.Response(200, json={"instrumentId": 100000}))
+    route = respx.get(_SEARCH_URL).mock(
+        return_value=httpx.Response(200, json=_SEARCH_JSON))
     async with EtoroClient(api_key="ak", user_key="uk", env="demo",
                            agent_token="agtok") as c:
         await c.resolve_instrument("BTC")
@@ -137,8 +160,8 @@ async def test_agent_token_switches_to_bearer_auth():
 
 @respx.mock
 async def test_no_agent_token_keeps_pair_auth():
-    route = respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
-        return_value=httpx.Response(200, json={"instrumentId": 100000}))
+    route = respx.get(_SEARCH_URL).mock(
+        return_value=httpx.Response(200, json=_SEARCH_JSON))
     async with EtoroClient(api_key="ak", user_key="uk", env="demo") as c:
         await c.resolve_instrument("BTC")
     sent = route.calls[0].request
@@ -149,7 +172,7 @@ async def test_no_agent_token_keeps_pair_auth():
 
 @respx.mock
 async def test_bearer_401_names_the_agent_token():
-    respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+    respx.get(_SEARCH_URL).mock(
         return_value=httpx.Response(401, json={"message": "unauthorized"}))
     async with EtoroClient(api_key="ak", user_key="uk", env="demo",
                            agent_token="agtok") as c:
@@ -159,7 +182,7 @@ async def test_bearer_401_names_the_agent_token():
 
 @respx.mock
 async def test_pair_401_keeps_generic_http_error():
-    respx.get(f"{BASE}/api/v1/instruments/BTC").mock(
+    respx.get(_SEARCH_URL).mock(
         return_value=httpx.Response(401, json={"message": "unauthorized"}))
     async with EtoroClient(api_key="ak", user_key="uk", env="demo") as c:
         with pytest.raises(httpx.HTTPStatusError):

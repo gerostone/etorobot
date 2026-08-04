@@ -171,8 +171,17 @@ class EtoroClient:
     async def resolve_instrument(self, symbol: str) -> int:
         if symbol in self._instrument_cache:
             return self._instrument_cache[symbol]
+        # /api/v1/instruments/{symbol} was removed by eToro (RouteNotFound as
+        # of 2026-08). The market-data search endpoint prefix-filters on
+        # internalSymbolFull, so "BTC" also returns BTCAUD etc. — pick the
+        # exact ticker match, never the first prefix hit.
         resp = await self._request(
-            "GET", f"/api/v1/instruments/{symbol}", write=False)
-        instrument_id = int(resp.json()["instrumentId"])
-        self._instrument_cache[symbol] = instrument_id
-        return instrument_id
+            "GET", "/api/v1/market-data/search", write=False,
+            params={"fields": "instrumentId,internalSymbolFull",
+                    "internalSymbolFull": symbol, "pageSize": 100})
+        for item in resp.json().get("items", []):
+            if item.get("internalSymbolFull", "").upper() == symbol.upper():
+                instrument_id = int(item["instrumentId"])
+                self._instrument_cache[symbol] = instrument_id
+                return instrument_id
+        raise ValueError(f"no instrument found for symbol {symbol!r}")
