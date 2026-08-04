@@ -18,13 +18,14 @@ class Engine:
     def __init__(self, feed: DataFeed,
                  strategies: dict[int, list[BaseStrategy]],
                  risk: RiskManager, broker: Broker, repo: Repository,
-                 notifier) -> None:
+                 notifier, run_id: int | None = None) -> None:
         self._feed = feed
         self._strategies = strategies
         self._risk = risk
         self._broker = broker
         self._repo = repo
         self._notifier = notifier
+        self._run_id = run_id
 
     async def run(self) -> None:
         await self._notify("start", "engine started")
@@ -75,17 +76,17 @@ class Engine:
         decision = self._risk.evaluate(signal, portfolio, price,
                                        event.candle.timestamp)
         self._record(self._repo.record_signal, signal, decision.accepted,
-                     decision.reason)
+                     decision.reason, self._run_id)
         if not decision.accepted:
             await self._notify(
                 "rejected", f"{signal.symbol} {signal.direction.value} "
                             f"rejected: {decision.reason}")
             return
         fill = await self._broker.execute(decision.order)
-        self._record(self._repo.record_fill, fill)
+        self._record(self._repo.record_fill, fill, self._run_id)
         portfolio = await self._broker.get_portfolio()
         self._record(self._repo.record_equity, event.candle.timestamp,
-                     portfolio.equity, portfolio.cash)
+                     portfolio.equity, portfolio.cash, self._run_id)
         await self._notify(
             "fill", f"{fill.action} {fill.symbol} {fill.units:.4f} "
                     f"@ {fill.price:.2f}")

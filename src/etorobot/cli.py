@@ -28,15 +28,33 @@ def _make_notifier(config: AppConfig):
     return NullNotifier()
 
 
-async def do_backtest(config: AppConfig, client, candles_count: int = 500) -> dict:
+async def do_backtest(config: AppConfig, client, candles_count: int = 500,
+                      db_url: str | None = None) -> dict:
     candles_by_instrument = {}
+    symbols: dict[int, str] = {}
     async with client:
         for inst in config.instruments:
             iid = await client.resolve_instrument(inst.symbol)
+            symbols[iid] = inst.symbol
             candles_by_instrument[iid] = await client.get_candles(
                 iid, inst.symbol, config.timeframe, count=candles_count)
-    return await run_backtest(candles_by_instrument, config.strategy,
-                              config.risk, config.backtest)
+    db_url = db_url or f"sqlite:///bot_{config.secrets.env}.db"
+    repo = Repository(db_url)
+    run_id = repo.create_run(
+        mode="backtest", env=config.secrets.env,
+        strategy=config.strategy.name, params=config.strategy.params,
+        timeframe=config.timeframe,
+        instruments=",".join(symbols.values()), starting_cash=1000.0)
+    status = "finished"
+    try:
+        return await run_backtest(candles_by_instrument, config.strategy,
+                                  config.risk, config.backtest,
+                                  repo=repo, run_id=run_id)
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        repo.finish_run(run_id, status)
 
 
 async def do_run(config: AppConfig, client) -> None:
@@ -48,13 +66,35 @@ async def do_run(config: AppConfig, client) -> None:
                     instruments, config.timeframe)
     broker = EtoroBroker(_make_client(config))
     repo = Repository(f"sqlite:///bot_{config.secrets.env}.db")
+    run_id = repo.create_run(
+        mode="live", env=config.secrets.env,
+        strategy=config.strategy.name, params=config.strategy.params,
+        timeframe=config.timeframe,
+        instruments=",".join(instruments.values()), starting_cash=0.0)
     strategies = {iid: [build_strategy(config.strategy.name,
                                        config.strategy.params)]
                   for iid in instruments}
     engine = Engine(feed=feed, strategies=strategies,
                     risk=RiskManager(config.risk), broker=broker, repo=repo,
-                    notifier=_make_notifier(config))
-    await engine.run()
+                    notifier=_make_notifier(config), run_id=run_id)
+    status = "finished"
+    try:
+        await engine.run()
+    except Exception:
+        status = "error"
+        raise
+    finally:
+        repo.finish_run(run_id, status)
+
+
+def do_dashboard(host: str, port: int, db_url: str) -> None:
+    import uvicorn
+
+    from etorobot.config.settings import DashboardSecrets
+    from etorobot.dashboard.app import create_app
+
+    token = DashboardSecrets().token
+    uvicorn.run(create_app(db_url, token=token), host=host, port=port)
 
 
 def main() -> None:
@@ -64,6 +104,10 @@ def main() -> None:
     sub.add_parser("run")
     bt = sub.add_parser("backtest")
     bt.add_argument("--candles", type=int, default=500)
+    dash = sub.add_parser("dashboard")
+    dash.add_argument("--host", default="127.0.0.1")
+    dash.add_argument("--port", type=int, default=8000)
+    dash.add_argument("--db", default=None)
     args = parser.parse_args()
     config = load_config(args.config)
 
@@ -74,6 +118,9 @@ def main() -> None:
             do_backtest(config, _make_client(config), args.candles))
         for k, v in metrics.items():
             print(f"{k}: {v}")
+    elif args.command == "dashboard":
+        db = args.db or f"bot_{config.secrets.env}.db"
+        do_dashboard(args.host, args.port, f"sqlite:///{db}")
 
 
 if __name__ == "__main__":

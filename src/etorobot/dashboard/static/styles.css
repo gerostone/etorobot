@@ -1,0 +1,19 @@
+:root { font-family: system-ui, sans-serif; }
+body { margin: 0; padding: 1.5rem; background: #0f1115; color: #e6e6e6; }
+h1, h2 { font-weight: 600; }
+a { color: #5aa9ff; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1.5rem; }
+th, td { border: 1px solid #2a2f3a; padding: 0.35rem 0.6rem; text-align: left;
+         font-size: 0.85rem; }
+th { background: #1a1e26; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
+         font-size: 0.75rem; }
+.badge.running { background: #1f6f43; }
+.badge.finished { background: #334; }
+.badge.error { background: #7a2030; }
+.badge.stale { background: #8a6d1a; }
+.metrics { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0; }
+.metric { background: #1a1e26; padding: 0.75rem 1rem; border-radius: 0.5rem; }
+.metric .value { font-size: 1.3rem; font-weight: 600; }
+#equityChart { max-height: 320px; background: #1a1e26; border-radius: 0.5rem;
+               padding: 0.5rem; }

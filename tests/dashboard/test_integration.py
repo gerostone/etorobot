@@ -1,12 +1,14 @@
-# tests/test_cli.py
+# tests/dashboard/test_integration.py
 from datetime import datetime, timezone, timedelta
 
+from fastapi.testclient import TestClient
+
+from etorobot.cli import do_backtest
 from etorobot.config.settings import (
     AppConfig, Secrets, TelegramSecrets, InstrumentConfig, StrategyConfig,
     RiskConfig, BacktestConfig)
 from etorobot.core.types import Candle
-from etorobot.cli import do_backtest
-from etorobot.persistence.repo import Repository
+from etorobot.dashboard.app import create_app
 
 
 class FakeClient:
@@ -15,7 +17,7 @@ class FakeClient:
 
     async def get_candles(self, instrument_id, symbol, interval, count):
         base = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        closes = [10, 9, 8, 9, 10, 11, 12, 13, 14, 15]
+        closes = [10, 9, 8, 9, 10, 11, 12, 11, 10, 8, 7, 9, 11, 13, 15]
         return [Candle(instrument_id, symbol, base + timedelta(minutes=i),
                        p, p, p, p, 1.0) for i, p in enumerate(closes)]
 
@@ -25,7 +27,7 @@ class FakeClient:
 
 def _config():
     return AppConfig(
-        timeframe="FiveMinutes",
+        timeframe="OneMinute",
         instruments=[InstrumentConfig(symbol="BTC")],
         strategy=StrategyConfig(name="sma_crossover",
                                 params={"fast": 2, "slow": 3}),
@@ -38,20 +40,18 @@ def _config():
         telegram=TelegramSecrets())
 
 
-async def test_do_backtest_returns_metrics(tmp_path):
-    db_url = f"sqlite:///{tmp_path / 'bt.db'}"
-    metrics = await do_backtest(_config(), client=FakeClient(),
-                                candles_count=10, db_url=db_url)
-    assert "total_return" in metrics and "num_trades" in metrics
-
-
-async def test_do_backtest_records_a_finished_run(tmp_path):
-    db_url = f"sqlite:///{tmp_path / 'bt.db'}"
-    await do_backtest(_config(), client=FakeClient(), candles_count=10,
+async def test_backtest_then_dashboard_report(tmp_path):
+    db_url = f"sqlite:///{tmp_path / 'e2e.db'}"
+    await do_backtest(_config(), client=FakeClient(), candles_count=15,
                       db_url=db_url)
-    repo = Repository(db_url)
-    runs = repo.list_run_rows()
+
+    client = TestClient(create_app(db_url, token=None))
+    runs = client.get("/api/runs").json()
     assert len(runs) == 1
-    assert runs[0]["mode"] == "backtest"
+    run_id = runs[0]["id"]
     assert runs[0]["status"] == "finished"
-    assert runs[0]["ended_at"] is not None
+
+    report = client.get(f"/api/runs/{run_id}").json()
+    assert report["metrics"]["num_trades"] >= 1
+    assert len(report["equity"]) >= 1
+    assert len(report["signals"]) >= 1

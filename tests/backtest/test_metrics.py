@@ -1,5 +1,4 @@
 # tests/backtest/test_metrics.py
-import math
 from etorobot.backtest.metrics import compute_metrics
 
 
